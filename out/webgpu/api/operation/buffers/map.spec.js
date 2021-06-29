@@ -1,0 +1,164 @@
+/**
+* AUTO-GENERATED - DO NOT EDIT. Source: https://github.com/gpuweb/cts
+**/export const description = `
+Test the operation of buffer mapping, specifically the data contents written via
+map-write/mappedAtCreation, and the contents of buffers returned by getMappedRange on
+buffers which are mapped-read/mapped-write/mappedAtCreation.
+
+range: used for getMappedRange
+mapRegion: used for mapAsync
+
+mapRegionBoundModes is used to get mapRegion from range:
+ - default-expand: expand mapRegion to buffer bound by setting offset/size to undefined
+ - explicit-expand: expand mapRegion to buffer bound by explicitly calculating offset/size
+ - minimal: make mapRegion to be the same as range which is the minimal range to make getMappedRange input valid
+
+TODO: Test that ranges not written preserve previous contents.
+TODO: Test that mapping-for-write again shows the values previously written.
+TODO: Some testing (probably minimal) of accessing with different TypedArray/DataView types.
+`;import { makeTestGroup } from '../../../../common/framework/test_group.js';
+import { assert } from '../../../../common/util/util.js';
+import { checkElementsEqual } from '../../../util/check_contents.js';
+
+import { MappingTest } from './mapping_test.js';
+
+export const g = makeTestGroup(MappingTest);
+
+const kSubcases = [
+{ size: 0, range: [] },
+{ size: 0, range: [undefined] },
+{ size: 0, range: [undefined, undefined] },
+{ size: 0, range: [0] },
+{ size: 0, range: [0, undefined] },
+{ size: 0, range: [0, 0] },
+{ size: 12, range: [] },
+{ size: 12, range: [undefined] },
+{ size: 12, range: [undefined, undefined] },
+{ size: 12, range: [0] },
+{ size: 12, range: [0, undefined] },
+{ size: 12, range: [0, 12] },
+{ size: 12, range: [0, 0] },
+{ size: 12, range: [8] },
+{ size: 12, range: [8, undefined] },
+{ size: 12, range: [8, 4] },
+{ size: 28, range: [8, 8] },
+{ size: 28, range: [8, 12] },
+{ size: 512 * 1024, range: [] }];
+
+
+function reifyMapRange(bufferSize, range) {
+  const offset = range[0] ?? 0;
+  return [offset, range[1] ?? bufferSize - offset];
+}
+
+const mapRegionBoundModes = ['default-expand', 'explicit-expand', 'minimal'];
+
+
+function getRegionForMap(
+bufferSize,
+range,
+{
+  mapAsyncRegionLeft,
+  mapAsyncRegionRight })
+
+
+
+
+{
+  const regionLeft = mapAsyncRegionLeft === 'minimal' ? range[0] : 0;
+  const regionRight = mapAsyncRegionRight === 'minimal' ? range[0] + range[1] : bufferSize;
+  return [
+  mapAsyncRegionLeft === 'default-expand' ? undefined : regionLeft,
+  mapAsyncRegionRight === 'default-expand' ? undefined : regionRight - regionLeft];
+
+}
+
+g.test('mapAsync,write').
+desc(
+`Use map-write to write to various ranges of variously-sized buffers, then expectContents
+(which does copyBufferToBuffer + map-read) to ensure the contents were written.`).
+
+params((u) =>
+u.
+combine('mapAsyncRegionLeft', mapRegionBoundModes).
+combine('mapAsyncRegionRight', mapRegionBoundModes).
+beginSubcases().
+combineWithParams(kSubcases)).
+
+fn(async t => {
+  const { size, range } = t.params;
+  const [rangeOffset, rangeSize] = reifyMapRange(size, range);
+
+  const buffer = t.device.createBuffer({
+    size,
+    usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.MAP_WRITE });
+
+
+  const mapRegion = getRegionForMap(size, [rangeOffset, rangeSize], t.params);
+  await buffer.mapAsync(GPUMapMode.WRITE, ...mapRegion);
+  const arrayBuffer = buffer.getMappedRange(...range);
+  t.checkMapWrite(buffer, rangeOffset, arrayBuffer, rangeSize);
+});
+
+g.test('mapAsync,read').
+desc(
+`Use mappedAtCreation to initialize various ranges of variously-sized buffers, then
+map-read and check the read-back result.`).
+
+params((u) =>
+u.
+combine('mapAsyncRegionLeft', mapRegionBoundModes).
+combine('mapAsyncRegionRight', mapRegionBoundModes).
+beginSubcases().
+combineWithParams(kSubcases)).
+
+fn(async t => {
+  const { size, range } = t.params;
+  const [rangeOffset, rangeSize] = reifyMapRange(size, range);
+
+  const buffer = t.device.createBuffer({
+    mappedAtCreation: true,
+    size,
+    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+
+  const init = buffer.getMappedRange(...range);
+
+  assert(init.byteLength === rangeSize);
+  const expected = new Uint32Array(new ArrayBuffer(rangeSize));
+  const data = new Uint32Array(init);
+  for (let i = 0; i < data.length; ++i) {
+    data[i] = expected[i] = i + 1;
+  }
+  buffer.unmap();
+
+  const mapRegion = getRegionForMap(size, [rangeOffset, rangeSize], t.params);
+  await buffer.mapAsync(GPUMapMode.READ, ...mapRegion);
+  const actual = new Uint8Array(buffer.getMappedRange(...range));
+  t.expectOK(checkElementsEqual(actual, new Uint8Array(expected.buffer)));
+});
+
+g.test('mappedAtCreation').
+desc(
+`Use mappedAtCreation to write to various ranges of variously-sized buffers created either
+with or without the MAP_WRITE usage (since this could affect the mappedAtCreation upload path),
+then expectContents (which does copyBufferToBuffer + map-read) to ensure the contents were written.`).
+
+params((u) =>
+u //
+.combine('mappable', [false, true]).
+beginSubcases().
+combineWithParams(kSubcases)).
+
+fn(async t => {
+  const { size, range, mappable } = t.params;
+  const [, rangeSize] = reifyMapRange(size, range);
+
+  const buffer = t.device.createBuffer({
+    mappedAtCreation: true,
+    size,
+    usage: GPUBufferUsage.COPY_SRC | (mappable ? GPUBufferUsage.MAP_WRITE : 0) });
+
+  const arrayBuffer = buffer.getMappedRange(...range);
+  t.checkMapWrite(buffer, range[0] ?? 0, arrayBuffer, rangeSize);
+});
+//# sourceMappingURL=map.spec.js.map
