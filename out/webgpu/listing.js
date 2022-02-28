@@ -30,6 +30,14 @@ export const listing = [
     "file": [
       "api",
       "operation",
+      "adapter",
+      "requestDevice_limits"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "operation",
       "async_ordering"
     ],
     "readme": "Test ordering of async resolutions between promises returned by the following calls (and possibly\nbetween multiple of the same call), where there are constraints on the ordering.\nSpec issue: https://github.com/gpuweb/gpuweb/issues/962\n\nTODO: plan and implement\n- createReadyPipeline() (not sure if this actually has any ordering constraints)\n- cmdbuf.executionTime\n- device.popErrorScope()\n- device.lost\n- queue.onSubmittedWorkDone()\n- buffer.mapAsync()\n- shadermodule.compilationInfo()"
@@ -48,6 +56,14 @@ export const listing = [
       "operation",
       "buffers",
       "map"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "operation",
+      "buffers",
+      "map_ArrayBuffer"
     ]
   },
   {
@@ -80,6 +96,14 @@ export const listing = [
       "operation",
       "command_buffer",
       "basic"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "operation",
+      "command_buffer",
+      "clearBuffer"
     ]
   },
   {
@@ -122,7 +146,7 @@ export const listing = [
       "command_buffer",
       "queries"
     ],
-    "readme": "TODO: test the behavior of creating/using/resolving queries.\n- occlusion\n- pipeline statistics\n- timestamp\n- nested (e.g. timestamp or PS query inside occlusion query), if any such cases are valid. Try\n  writing to the same query set (at same or different indices), if valid. Check results make sense.\n- start a query (all types) with no draw calls"
+    "readme": "TODO: test the behavior of creating/using/resolving queries.\n- occlusion\n- pipeline statistics\n  TODO: pipeline statistics queries are removed from core; consider moving tests to another suite.\n- timestamp\n- nested (e.g. timestamp or PS query inside occlusion query), if any such cases are valid. Try\n  writing to the same query set (at same or different indices), if valid. Check results make sense.\n- start a query (all types) with no draw calls"
   },
   {
     "file": [
@@ -213,16 +237,7 @@ export const listing = [
       "operation",
       "memory_sync",
       "texture",
-      "rw_and_wr"
-    ]
-  },
-  {
-    "file": [
-      "api",
-      "operation",
-      "memory_sync",
-      "texture",
-      "ww"
+      "same_subresource"
     ]
   },
   {
@@ -230,6 +245,14 @@ export const listing = [
       "api",
       "operation",
       "onSubmittedWorkDone"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "operation",
+      "pipeline",
+      "default_layout"
     ]
   },
   {
@@ -247,6 +270,14 @@ export const listing = [
       "render_pass"
     ],
     "readme": "Render pass stuff other than commands (which are in command_buffer/)."
+  },
+  {
+    "file": [
+      "api",
+      "operation",
+      "render_pass",
+      "clear_value"
+    ]
   },
   {
     "file": [
@@ -301,6 +332,14 @@ export const listing = [
       "api",
       "operation",
       "render_pipeline",
+      "pipeline_output_targets"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "operation",
+      "render_pipeline",
       "primitive_topology"
     ]
   },
@@ -310,6 +349,14 @@ export const listing = [
       "operation",
       "render_pipeline",
       "sample_mask"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "operation",
+      "render_pipeline",
+      "vertex_only_render_pipeline"
     ]
   },
   {
@@ -341,6 +388,14 @@ export const listing = [
       "api",
       "operation",
       "rendering",
+      "depth_clip_clamp"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "operation",
+      "rendering",
       "draw"
     ]
   },
@@ -350,6 +405,14 @@ export const listing = [
       "operation",
       "rendering",
       "indirect_draw"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "operation",
+      "rendering",
+      "robust_access_index"
     ]
   },
   {
@@ -422,21 +485,13 @@ export const listing = [
       "operation",
       "threading"
     ],
-    "readme": "Tests for behavior with multiple threads (main thread + workers).\n\nTODO: plan and implement\n- Try postMessage'ing an object of every type (to same or different thread)\n    - {main -> main, main -> worker, worker -> main, worker1 -> worker1, worker1 -> worker2}\n    - through {global postMessage, MessageChannel}\n    - {in, not in} transferrable object list, when valid\n- Short tight loop doing many of an action from two threads at the same time\n    - e.g. {create {buffer, texture, shader, pipeline}}"
+    "readme": "Tests for behavior with multiple threads (main thread + workers).\n\nTODO: plan and implement\n- 'postMessage'\n  Try postMessage'ing an object of every type (to same or different thread)\n    - {main -> main, main -> worker, worker -> main, worker1 -> worker1, worker1 -> worker2}\n    - through {global postMessage, MessageChannel}\n    - {in, not in} transferrable object list, when valid\n- 'concurrency'\n  Short tight loop doing many of an action from two threads at the same time\n    - e.g. {create {buffer, texture, shader, pipeline}}"
   },
   {
     "file": [
       "api",
       "operation",
       "uncapturederror"
-    ]
-  },
-  {
-    "file": [
-      "api",
-      "operation",
-      "vertex_state",
-      "basic"
     ]
   },
   {
@@ -523,7 +578,7 @@ export const listing = [
       "validation",
       "capability_checks",
       "features",
-      "depth_clamping"
+      "depth_clip_control"
     ]
   },
   {
@@ -551,7 +606,7 @@ export const listing = [
       "capability_checks",
       "limits"
     ],
-    "readme": "Test everything that shouldn't be valid without a higher-than-specified limit.\n\n- x= that limit {default, max supported (if different), lower than default (TODO: if allowed)}\n\nOne file for each limit name.\n\nTODO: implement"
+    "readme": "Test everything that shouldn't be valid without a higher-than-specified limit.\n\n- x= that limit {default, max supported (if different), lower than default (TODO: if allowed)}\n\nOne file for each limit name.\n\nTODO: implement\nTODO: Also test that \"alignment\" limits require a power of 2."
   },
   {
     "file": [
@@ -639,6 +694,15 @@ export const listing = [
       "validation",
       "encoding",
       "cmds",
+      "clearBuffer"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "encoding",
+      "cmds",
       "compute_pass"
     ]
   },
@@ -685,6 +749,16 @@ export const listing = [
       "encoding",
       "cmds",
       "render",
+      "draw"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "encoding",
+      "cmds",
+      "render",
       "dynamic_state"
     ]
   },
@@ -695,7 +769,37 @@ export const listing = [
       "encoding",
       "cmds",
       "render",
-      "other"
+      "indirect_draw"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "encoding",
+      "cmds",
+      "render",
+      "setIndexBuffer"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "encoding",
+      "cmds",
+      "render",
+      "setPipeline"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "encoding",
+      "cmds",
+      "render",
+      "setVertexBuffer"
     ]
   },
   {
@@ -800,7 +904,15 @@ export const listing = [
       "validation",
       "image_copy"
     ],
-    "readme": "writeTexture + copyBufferToTexture + copyTextureToBuffer validation tests.\n\nTest coverage:\n* resource usages:\n\t- texture_usage_must_be_valid: for GPUTextureUsage::COPY_SRC, GPUTextureUsage::COPY_DST flags.\n\t- TODO: buffer_usage_must_be_valid\n\n* textureCopyView:\n\t- texture_must_be_valid: for valid, destroyed, error textures.\n\t- sample_count_must_be_1: for sample count 1 and 4.\n\t- mip_level_must_be_in_range: for various combinations of mipLevel and mipLevelCount.\n\t- texel_block_alignment_on_origin: for all formats and coordinates.\n\n* bufferCopyView:\n\t- TODO: buffer_must_be_valid\n\t- TODO: bytes_per_row_alignment\n\n* linear texture data:\n\t- bound_on_rows_per_image: for various combinations of copyDepth (1, >1), copyHeight, rowsPerImage.\n\t- offset_plus_required_bytes_in_copy_overflow\n\t- required_bytes_in_copy: testing minimal data size and data size too small for various combinations of bytesPerRow, rowsPerImage, copyExtent and offset. for the copy method, bytesPerRow is computed as bytesInACompleteRow aligned to be a multiple of 256 + bytesPerRowPadding * 256.\n\t- texel_block_alignment_on_rows_per_image: for all formats.\n\t- texel_block_alignment_on_offset: for all formats.\n\t- bound_on_bytes_per_row: for all formats and various combinations of bytesPerRow and copyExtent. for writeTexture, bytesPerRow is computed as (blocksPerRow * blockWidth * bytesPerBlock + additionalBytesPerRow) and copyExtent.width is computed as copyWidthInBlocks * blockWidth. for the copy methods, both values are mutliplied by 256.\n\t- bound_on_offset: for various combinations of offset and dataSize.\n\n* texture copy range:\n\t- 1d_texture: copyExtent.height isn't 1, copyExtent.depthOrArrayLayers isn't 1.\n\t- texel_block_alignment_on_size: for all formats and coordinates.\n\t- texture_range_conditons: for all coordinate and various combinations of origin, copyExtent, textureSize and mipLevel.\n\nTODO: more test coverage for 1D and 3D textures."
+    "readme": "writeTexture + copyBufferToTexture + copyTextureToBuffer validation tests.\n\nTest coverage:\n* resource usages:\n\t- texture_usage_must_be_valid: for GPUTextureUsage::COPY_SRC, GPUTextureUsage::COPY_DST flags.\n\t- buffer_usage_must_be_valid: for GPUBufferUsage::COPY_SRC, GPUBufferUsage::COPY_DST flags.\n\n* textureCopyView:\n\t- texture_must_be_valid: for valid, destroyed, error textures.\n\t- sample_count_must_be_1: for sample count 1 and 4.\n\t- mip_level_must_be_in_range: for various combinations of mipLevel and mipLevelCount.\n\t- format: for all formats with full and non-full copies on width, height, and depth.\n\t- texel_block_alignment_on_origin: for all formats and coordinates.\n\n* bufferCopyView:\n\t- buffer_must_be_valid: for valid, destroyed, error buffers.\n\t- bytes_per_row_alignment: for bytesPerRow to be 256-byte aligned or not, and bytesPerRow is required or not.\n\n* linear texture data:\n\t- bound_on_rows_per_image: for various combinations of copyDepth (1, >1), copyHeight, rowsPerImage.\n\t- offset_plus_required_bytes_in_copy_overflow\n\t- required_bytes_in_copy: testing minimal data size and data size too small for various combinations of bytesPerRow, rowsPerImage, copyExtent and offset. for the copy method, bytesPerRow is computed as bytesInACompleteRow aligned to be a multiple of 256 + bytesPerRowPadding * 256.\n\t- texel_block_alignment_on_rows_per_image: for all formats.\n\t- offset_alignment: for all formats.\n\t- bound_on_offset: for various combinations of offset and dataSize.\n\n* texture copy range:\n\t- 1d_texture: copyExtent.height isn't 1, copyExtent.depthOrArrayLayers isn't 1.\n\t- texel_block_alignment_on_size: for all formats and coordinates.\n\t- texture_range_conditons: for all coordinate and various combinations of origin, copyExtent, textureSize and mipLevel.\n\nTODO: more test coverage for 1D and 3D textures."
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "image_copy",
+      "buffer_related"
+    ]
   },
   {
     "file": [
@@ -871,7 +983,7 @@ export const listing = [
       "validation",
       "queue",
       "copyToTexture",
-      "ImageBitmap"
+      "CopyExternalImageToTexture"
     ]
   },
   {
@@ -897,8 +1009,7 @@ export const listing = [
       "api",
       "validation",
       "queue",
-      "destroyed",
-      "texture"
+      "submit"
     ]
   },
   {
@@ -989,24 +1100,8 @@ export const listing = [
     "file": [
       "api",
       "validation",
-      "state",
-      "device_mismatched"
-    ],
-    "readme": "Tests of behavior on one device using objects from another device.\n\n- x= every place in the API where an object is passed (as this, an arg, or a dictionary member).\n\nTODO: implement"
-  },
-  {
-    "file": [
-      "api",
-      "validation",
       "texture",
       "destroy"
-    ]
-  },
-  {
-    "file": [
-      "api",
-      "validation",
-      "vertex_access"
     ]
   },
   {
@@ -1025,7 +1120,7 @@ export const listing = [
     "file": [
       "idl"
     ],
-    "readme": "Tests to check that the WebGPU IDL is correctly implemented, for examples that objects exposed\nexactly the correct members, and that methods throw when passed incomplete dictionaries.\n\nSee https://github.com/gpuweb/cts/issues/332"
+    "readme": "Tests to check that the WebGPU IDL is correctly implemented, for examples that objects exposed\nexactly the correct members, and that methods throw when passed incomplete dictionaries.\n\nSee https://github.com/gpuweb/cts/issues/332\n\nTODO: exposed.html.ts: Test all WebGPU interfaces instead of just some of them.\nTODO: Check prototype chains. (Add a helper in IDLTest for this.)"
   },
   {
     "file": [
@@ -1051,7 +1146,261 @@ export const listing = [
     "file": [
       "shader",
       "execution",
+      "builtin",
+      "abs"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "builtin",
+      "all"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "builtin",
+      "any"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "builtin",
+      "atan"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "builtin",
+      "ceil"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "builtin",
+      "clamp"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "builtin",
+      "cos"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "builtin",
+      "countLeadingZeros"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "builtin",
+      "countTrailingZeros"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "builtin",
+      "extractBits"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "builtin",
+      "firstLeadingBit"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "builtin",
+      "firstTrailingBit"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "builtin",
+      "float_built_functions"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "builtin",
+      "floor"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "builtin",
+      "fract"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "builtin",
+      "insertBits"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "builtin",
+      "integer_built_in_functions"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "builtin",
+      "inversesqrt"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "builtin",
+      "logical_built_in_functions"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "builtin",
+      "max"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "builtin",
+      "min"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "builtin",
+      "select"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "builtin",
+      "value_testing_built_in_functions"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "memory_model",
+      "atomicity"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "memory_model",
+      "barrier"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "memory_model",
+      "coherence"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "memory_model",
+      "weak"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "robust_access"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
       "robust_access_vertex"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "sampling",
+      "gradients_in_varying_loop"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "shader_io",
+      "compute_builtins"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "shader_io",
+      "shared_structs"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "zero_init"
     ]
   },
   {
@@ -1067,6 +1416,46 @@ export const listing = [
       "validation"
     ],
     "readme": "Positive and negative tests for all the validation rules of the shading language."
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "shader_io",
+      "builtins"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "shader_io",
+      "generic"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "shader_io",
+      "interpolate"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "shader_io",
+      "invariant"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "shader_io",
+      "locations"
+    ]
   },
   {
     "file": [
@@ -1094,7 +1483,7 @@ export const listing = [
     "file": [
       "web_platform"
     ],
-    "readme": "Tests for Web platform-specific interactions like GPUSwapChain and canvas, WebXR,\nImageBitmaps, and video APIs."
+    "readme": "Tests for Web platform-specific interactions like GPUCanvasContext and canvas, WebXR,\nImageBitmaps, and video APIs.\n\nTODO(#922): Also hopefully tests for user-initiated readbacks from WebGPU canvases\n(printing, save image as, etc.)"
   },
   {
     "file": [
@@ -1107,7 +1496,7 @@ export const listing = [
     "file": [
       "web_platform",
       "canvas",
-      "configureSwapChain"
+      "configure"
     ]
   },
   {
@@ -1128,7 +1517,14 @@ export const listing = [
     "file": [
       "web_platform",
       "canvas",
-      "getSwapChainPreferredFormat"
+      "getPreferredFormat"
+    ]
+  },
+  {
+    "file": [
+      "web_platform",
+      "canvas",
+      "readbackFromWebGPUCanvas"
     ]
   },
   {
@@ -1164,14 +1560,7 @@ export const listing = [
       "web_platform",
       "external_texture"
     ],
-    "readme": "Tests for external textures from video/canvas."
-  },
-  {
-    "file": [
-      "web_platform",
-      "external_texture",
-      "canvas"
-    ]
+    "readme": "Tests for external textures."
   },
   {
     "file": [
@@ -1185,6 +1574,6 @@ export const listing = [
       "web_platform",
       "reftests"
     ],
-    "readme": "Reference tests (reftests) for WebGPU canvas presentation.\n\nThese render some contents to a canvas using WebGPU, and WPT compares the rendering result with\nthe \"reference\" versions (in `ref/`) which render with 2D canvas.\n\nThis tests things like:\n- The canvas has the correct orientation.\n- The canvas renders with the correct transfer function.\n- The canvas blends and interpolates in the correct color encoding.\n\nTODO: Test all possible output texture formats (currently only testing bgra8unorm).\nTODO: Test all possible ways to write into those formats (currently only testing B2T copy)."
+    "readme": "Reference tests (reftests) for WebGPU canvas presentation.\n\nThese render some contents to a canvas using WebGPU, and WPT compares the rendering result with\nthe \"reference\" versions (in `ref/`) which render with 2D canvas.\n\nThis tests things like:\n- The canvas has the correct orientation.\n- The canvas renders with the correct transfer function.\n- The canvas blends and interpolates in the correct color encoding.\n\nTODO(#915): canvas_complex: test rgba8unorm and rgba16float\nTODO(#916): canvas_complex: Test all ways to write into textures (currently only testing copy methods).\nTODO(#917): Test compositingAlphaMode options\nTODO(#918): Test all possible color spaces (once we have more than 1)\n\nTODO(#921): Why is there sometimes a difference of 1 (e.g. 3f vs 40) in canvas_size_different_with_back_buffer_size?\nAnd why does chromium's image_diff show diffs on other pixels that don't seem to have diffs?"
   }
 ];

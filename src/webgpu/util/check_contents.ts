@@ -7,6 +7,8 @@ import {
   TypedArrayBufferViewConstructor,
 } from '../../common/util/util.js';
 
+import { float16BitsToFloat32 } from './conversion.js';
+
 /** Generate an expected value at `index`, to test for equality with the actual value. */
 export type CheckElementsGenerator = (index: number) => number;
 /** Check whether the actual `value` at `index` is as expected. */
@@ -15,11 +17,14 @@ export type CheckElementsPredicate = (index: number, value: number) => boolean;
  * Provides a pretty-printing implementation for a particular CheckElementsPredicate.
  * This is an array; each element provides info to print an additional row in the error message.
  */
-export type CheckElementsSupplementalTableRows = ReadonlyArray<{
+export type CheckElementsSupplementalTableRows = Array<{
   /** Row header. */
   leftHeader: string;
-  /** Get the value for a cell in the table with TypedArray element index `index`. */
-  getValueForCell: (index: number) => number;
+  /**
+   * Get the value for a cell in the table with element index `index`.
+   * May be a string or a number; a number will be formatted according to the TypedArray type used.
+   */
+  getValueForCell: (index: number) => number | string;
 }>;
 
 /**
@@ -37,26 +42,62 @@ export function checkElementsEqual(
 
 /**
  * Check whether each value in a `TypedArray` is between the two corresponding "expected" values
- * (either `a[i] <= actual[i] <= b[i]` or `a[i] >= actual[i] => b[i]`).
+ * (either `a(i) <= actual[i] <= b(i)` or `a(i) >= actual[i] => b(i)`).
  */
 export function checkElementsBetween(
   actual: TypedArrayBufferView,
-  expected: readonly [TypedArrayBufferView, TypedArrayBufferView]
+  expected: readonly [CheckElementsGenerator, CheckElementsGenerator]
 ): ErrorWithExtra | undefined {
   const error = checkElementsPassPredicate(
     actual,
     (index, value) =>
-      value >= Math.min(expected[0][index], expected[1][index]) &&
-      value <= Math.max(expected[0][index], expected[1][index]),
+      value >= Math.min(expected[0](index), expected[1](index)) &&
+      value <= Math.max(expected[0](index), expected[1](index)),
     {
       predicatePrinter: [
-        { leftHeader: 'between', getValueForCell: index => expected[0][index] },
-        { leftHeader: 'and', getValueForCell: index => expected[1][index] },
+        { leftHeader: 'between', getValueForCell: index => expected[0](index) },
+        { leftHeader: 'and', getValueForCell: index => expected[1](index) },
       ],
     }
   );
   // If there was an error, extend it with additional extras.
   return error ? new ErrorWithExtra(error, () => ({ expected })) : undefined;
+}
+
+/**
+ * Equivalent to {@link checkElementsBetween} but interpret values as float16 and convert to JS number before comparison.
+ */
+export function checkElementsFloat16Between(
+  actual: TypedArrayBufferView,
+  expected: readonly [TypedArrayBufferView, TypedArrayBufferView]
+): ErrorWithExtra | undefined {
+  assert(actual.BYTES_PER_ELEMENT === 2, 'bytes per element need to be 2 (16bit)');
+  const actualF32 = new Float32Array(actual.length);
+  actual.forEach((v: number, i: number) => {
+    actualF32[i] = float16BitsToFloat32(v);
+  });
+  const expectedF32 = [new Float32Array(expected[0].length), new Float32Array(expected[1].length)];
+  expected[0].forEach((v: number, i: number) => {
+    expectedF32[0][i] = float16BitsToFloat32(v);
+  });
+  expected[1].forEach((v: number, i: number) => {
+    expectedF32[1][i] = float16BitsToFloat32(v);
+  });
+
+  const error = checkElementsPassPredicate(
+    actualF32,
+    (index, value) =>
+      value >= Math.min(expectedF32[0][index], expectedF32[1][index]) &&
+      value <= Math.max(expectedF32[0][index], expectedF32[1][index]),
+    {
+      predicatePrinter: [
+        { leftHeader: 'between', getValueForCell: index => expectedF32[0][index] },
+        { leftHeader: 'and', getValueForCell: index => expectedF32[1][index] },
+      ],
+    }
+  );
+  // If there was an error, extend it with additional extras.
+  return error ? new ErrorWithExtra(error, () => ({ expectedF32 })) : undefined;
 }
 
 /**

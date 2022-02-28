@@ -5,13 +5,6 @@ Tests for the general aspects of draw/drawIndexed/drawIndirect/drawIndexedIndire
 
 Primitive topology tested in api/operation/render_pipeline/primitive_topology.spec.ts.
 Index format tested in api/operation/command_buffer/render/state_tracking.spec.ts.
-
-* arguments - Test that draw arguments are passed correctly.
-
-TODO:
-* default_arguments - Test defaults to draw / drawIndexed.
-  - arg= {instance_count, first, first_instance, base_vertex}
-  - mode= {draw, drawIndexed}
 `;import { makeTestGroup } from '../../../../common/framework/test_group.js';
 import {
 assert } from
@@ -57,7 +50,11 @@ combine('vertex_buffer_offset', [0, 32]).
 expand('index_buffer_offset', p => p.indexed ? [0, 16] : [undefined]).
 expand('base_vertex', p => p.indexed ? [0, 9] : [undefined])).
 
-fn(t => {
+fn(async t => {
+  if (t.params.first_instance > 0 && t.params.indirect) {
+    await t.selectDeviceOrSkipTestCase('indirect-first-instance');
+  }
+
   const renderTargetSize = [72, 36];
 
   // The test will split up the render target into a grid where triangles of
@@ -88,13 +85,13 @@ fn(t => {
   const vertexModule = t.device.createShaderModule({
     code: `
 struct Inputs {
-  [[builtin(vertex_index)]] vertex_index : u32;
-  [[builtin(instance_index)]] instance_id : u32;
-  [[location(0)]] vertexPosition : vec2<f32>;
+  @builtin(vertex_index) vertex_index : u32;
+  @builtin(instance_index) instance_id : u32;
+  @location(0) vertexPosition : vec2<f32>;
 };
 
-[[stage(vertex)]] fn vert_main(input : Inputs
-  ) -> [[builtin(position)]] vec4<f32> {
+@stage(vertex) fn vert_main(input : Inputs
+  ) -> @builtin(position) vec4<f32> {
   // 3u is the number of points in a triangle to convert from index
   // to id.
   var vertex_id : u32 = input.vertex_index / 3u;
@@ -112,13 +109,13 @@ struct Inputs {
 
   const fragmentModule = t.device.createShaderModule({
     code: `
-[[block]] struct Output {
+struct Output {
   value : u32;
 };
 
-[[group(0), binding(0)]] var<storage, read_write> output : Output;
+@group(0) @binding(0) var<storage, read_write> output : Output;
 
-[[stage(fragment)]] fn frag_main() -> [[location(0)]] vec4<f32> {
+@stage(fragment) fn frag_main() -> @location(0) vec4<f32> {
   output.value = 1u;
   return vec4<f32>(0.0, 1.0, 0.0, 1.0);
 }
@@ -322,6 +319,15 @@ struct Inputs {
   }
 });
 
+g.test('default_arguments').
+desc(
+`TODO: Test defaults to draw / drawIndexed. Maybe merge with the 'arguments' test.
+- arg= {instance_count, first, first_instance, base_vertex}
+- mode= {draw, drawIndexed}
+  `).
+
+unimplemented();
+
 g.test('vertex_attributes,basic').
 desc(
 `Test basic fetching of vertex attributes.
@@ -427,11 +433,11 @@ fn(t => {
   }
 
   // Create an array of shader locations [0, 1, 2, 3, ...] for easy iteration.
-  const shaderLocations = new Array(shaderLocation).fill(0).map((_, i) => i);
+  const vertexInputShaderLocations = new Array(shaderLocation).fill(0).map((_, i) => i);
 
   // Create the expected data buffer.
   const expectedData = new ExpectedDataConstructor(
-  vertexCount * instanceCount * shaderLocations.length);
+  vertexCount * instanceCount * vertexInputShaderLocations.length);
 
 
   // Populate the expected data. This is a CPU-side version of what we expect the shader
@@ -441,7 +447,8 @@ fn(t => {
       bufferLayouts.forEach((bufferLayout, b) => {
         for (const attribute of bufferLayout.attributes) {
           const primitiveId = vertexCount * instanceIndex + vertexIndex;
-          const outputIndex = primitiveId * shaderLocations.length + attribute.shaderLocation;
+          const outputIndex =
+          primitiveId * vertexInputShaderLocations.length + attribute.shaderLocation;
 
           let vertexOrInstanceIndex;
           switch (bufferLayout.stepMode) {
@@ -475,25 +482,62 @@ fn(t => {
       break;}
 
 
+  // Maximum inter-stage shader location is 14, and we need to consume one for primitiveId, 12 for
+  // location 0 to 11,  and combine the remaining vertex inputs into one location (one
+  // vec4<wgslFormat> when vertex_attribute_count === 16).
+  const interStageScalarShaderLocation = Math.min(shaderLocation, 12);
+  const interStageScalarShaderLocations = new Array(interStageScalarShaderLocation).
+  fill(0).
+  map((_, i) => i);
+
+  let accumulateVariableDeclarationsInVertexShader = '';
+  let accumulateVariableAssignmentsInVertexShader = '';
+  let accumulateVariableDeclarationsInFragmentShader = '';
+  let accumulateVariableAssignmentsInFragmentShader = '';
+  // The remaining 3 vertex attributes
+  if (t.params.vertex_attribute_count === 16) {
+    accumulateVariableDeclarationsInVertexShader = `
+        @location(13) @interpolate(flat) outAttrib13 : vec4<${wgslFormat}>;
+      `;
+    accumulateVariableAssignmentsInVertexShader = `
+      output.outAttrib13 =
+          vec4<${wgslFormat}>(input.attrib12, input.attrib13, input.attrib14, input.attrib15);
+      `;
+    accumulateVariableDeclarationsInFragmentShader = `
+      @location(13) @interpolate(flat) attrib13 : vec4<${wgslFormat}>;
+      `;
+    accumulateVariableAssignmentsInFragmentShader = `
+      outBuffer.primitives[input.primitiveId].attrib12 = input.attrib13.x;
+      outBuffer.primitives[input.primitiveId].attrib13 = input.attrib13.y;
+      outBuffer.primitives[input.primitiveId].attrib14 = input.attrib13.z;
+      outBuffer.primitives[input.primitiveId].attrib15 = input.attrib13.w;
+      `;
+  }
+
   const pipeline = t.device.createRenderPipeline({
     vertex: {
       module: t.device.createShaderModule({
         code: `
 struct Inputs {
-  [[builtin(vertex_index)]] vertexIndex : u32;
-  [[builtin(instance_index)]] instanceIndex : u32;
-${shaderLocations.map(i => `  [[location(${i})]] attrib${i} : ${wgslFormat};`).join('\n')}
+  @builtin(vertex_index) vertexIndex : u32;
+  @builtin(instance_index) instanceIndex : u32;
+${vertexInputShaderLocations.map(i => `  @location(${i}) attrib${i} : ${wgslFormat};`).join('\n')}
 };
 
 struct Outputs {
-  [[builtin(position)]] Position : vec4<f32>;
-${shaderLocations.map(i => `  [[location(${i})]] outAttrib${i} : ${wgslFormat};`).join('\n')}
-  [[location(${shaderLocations.length})]] primitiveId : u32;
+  @builtin(position) Position : vec4<f32>;
+${interStageScalarShaderLocations.
+        map(i => `  @location(${i}) @interpolate(flat) outAttrib${i} : ${wgslFormat};`).
+        join('\n')}
+  @location(${interStageScalarShaderLocations.length}) @interpolate(flat) primitiveId : u32;
+${accumulateVariableDeclarationsInVertexShader}
 };
 
-[[stage(vertex)]] fn main(input : Inputs) -> Outputs {
+@stage(vertex) fn main(input : Inputs) -> Outputs {
   var output : Outputs;
-${shaderLocations.map(i => `  output.outAttrib${i} = input.attrib${i};`).join('\n')}
+${interStageScalarShaderLocations.map(i => `  output.outAttrib${i} = input.attrib${i};`).join('\n')}
+${accumulateVariableAssignmentsInVertexShader}
+
   output.primitiveId = input.instanceIndex * ${instanceCount}u + input.vertexIndex;
   output.Position = vec4<f32>(0.0, 0.0, 0.5, 1.0);
   return output;
@@ -507,29 +551,34 @@ ${shaderLocations.map(i => `  output.outAttrib${i} = input.attrib${i};`).join('\
       module: t.device.createShaderModule({
         code: `
 struct Inputs {
-${shaderLocations.map(i => `  [[location(${i})]] attrib${i} : ${wgslFormat};`).join('\n')}
-  [[location(${shaderLocations.length})]] primitiveId : u32;
+${interStageScalarShaderLocations.
+        map(i => `  @location(${i}) @interpolate(flat) attrib${i} : ${wgslFormat};`).
+        join('\n')}
+  @location(${interStageScalarShaderLocations.length}) @interpolate(flat) primitiveId : u32;
+${accumulateVariableDeclarationsInFragmentShader}
 };
 
 struct OutPrimitive {
-${shaderLocations.map(i => `  attrib${i} : ${wgslFormat};`).join('\n')}
+${vertexInputShaderLocations.map(i => `  attrib${i} : ${wgslFormat};`).join('\n')}
 };
-[[block]] struct OutBuffer {
-  primitives : [[stride(${shaderLocations.length * 4})]] array<OutPrimitive>;
+struct OutBuffer {
+  primitives : @stride(${vertexInputShaderLocations.length * 4}) array<OutPrimitive>;
 };
-[[group(0), binding(0)]] var<storage, read_write> outBuffer : OutBuffer;
+@group(0) @binding(0) var<storage, read_write> outBuffer : OutBuffer;
 
-[[stage(fragment)]] fn main(input : Inputs) {
-${shaderLocations.
+@stage(fragment) fn main(input : Inputs) {
+${interStageScalarShaderLocations.
         map(i => `  outBuffer.primitives[input.primitiveId].attrib${i} = input.attrib${i};`).
         join('\n')}
+${accumulateVariableAssignmentsInFragmentShader}
 }
           ` }),
 
       entryPoint: 'main',
       targets: [
       {
-        format: 'rgba8unorm' }] },
+        format: 'rgba8unorm',
+        writeMask: 0 }] },
 
 
 
@@ -540,7 +589,7 @@ ${shaderLocations.
 
   const resultBuffer = t.device.createBuffer({
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-    size: vertexCount * instanceCount * shaderLocations.length * 4 });
+    size: vertexCount * instanceCount * vertexInputShaderLocations.length * 4 });
 
 
   const resultBindGroup = t.device.createBindGroup({
@@ -559,7 +608,8 @@ ${shaderLocations.
   const renderPass = commandEncoder.beginRenderPass({
     colorAttachments: [
     {
-      // Dummy render attachment - not used.
+      // Dummy render attachment - not used (WebGPU doesn't allow using a render pass with no
+      // attachments)
       view: t.device.
       createTexture({
         usage: GPUTextureUsage.RENDER_ATTACHMENT,
@@ -597,6 +647,24 @@ desc(
       - vertex_format_1={...all_vertex_formats}
       - vertex_format_2={...all_vertex_formats}
   `).
+
+unimplemented();
+
+g.test(`largeish_buffer`).
+desc(
+`
+    Test a very large range of buffer is bound.
+    For a render pipeline that use a vertex step mode and a instance step mode vertex buffer, test
+    that :
+    - For draw, drawIndirect, drawIndexed and drawIndexedIndirect:
+        - The bound range of vertex step mode vertex buffer is significantly larger than necessary
+        - The bound range of instance step mode vertex buffer is significantly larger than necessary
+        - A large buffer is bound to an unused slot
+    - For drawIndexed and drawIndexedIndirect:
+        - The bound range of index buffer is significantly larger than necessary
+    - For drawIndirect and drawIndexedIndirect:
+        - The indirect buffer is significantly larger than necessary
+`).
 
 unimplemented();
 //# sourceMappingURL=draw.spec.js.map

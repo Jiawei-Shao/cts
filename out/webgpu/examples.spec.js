@@ -11,7 +11,7 @@ import { GPUTest } from './gpu_test.js';
 // To run these tests in the standalone runner, run `npm start` then open:
 // - http://localhost:XXXX/standalone/?runnow=1&q=webgpu:examples:*
 // To run in WPT, copy/symlink the out-wpt/ directory as the webgpu/ directory in WPT, then open:
-// - (wpt server url)/webgpu/cts.html?q=webgpu:examples:
+// - (wpt server url)/webgpu/cts.https.html?q=webgpu:examples:
 //
 // Tests here can be run individually or in groups:
 // - ?q=webgpu:examples:basic,async:
@@ -212,16 +212,11 @@ g.test('gpu,async').fn(async t => {
 
 g.test('gpu,buffers').fn(async t => {
   const data = new Uint32Array([0, 1234, 0]);
-  const src = t.device.createBuffer({
-    mappedAtCreation: true,
-    size: 12,
-    usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
+  const src = t.makeBufferWithContents(data, GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST);
 
-  new Uint32Array(src.getMappedRange()).set(data);
-  src.unmap();
-
-  // Use the expectContents helper to check the actual contents of a GPUBuffer.
-  // Like shouldReject, it must be awaited.
+  // Use the expectGPUBufferValuesEqual helper to check the actual contents of a GPUBuffer.
+  // This makes a copy and then asynchronously checks the contents. The test fixture will
+  // wait on that result before reporting whether the test passed or failed.
   t.expectGPUBufferValuesEqual(src, data);
 });
 
@@ -247,27 +242,37 @@ fn(async t => {
     t.device.createTexture({
       format: 'bc1-rgba-unorm',
       size: [4, 4, 1],
-      usage: GPUTextureUsage.SAMPLED });
+      usage: GPUTextureUsage.TEXTURE_BINDING });
 
   },
   shouldError);
 
 });
 
-g.test('gpu,with_texture_compression,etc').
+g.test('gpu,with_texture_compression,etc2').
 desc(
 `Example of a test using a device descriptor.
+Tests that an ETC2 format passes validation iff the feature is enabled.`).
 
-TODO: Test that an ETC format passes validation iff the feature is enabled.`).
-
-params(u => u.combine('textureCompressionETC', [false, true])).
+params(u => u.combine('textureCompressionETC2', [false, true])).
 fn(async t => {
-  const { textureCompressionETC } = t.params;
+  const { textureCompressionETC2 } = t.params;
 
-  if (textureCompressionETC) {
-    await t.selectDeviceOrSkipTestCase('texture-compression-etc');
+  if (textureCompressionETC2) {
+    await t.selectDeviceOrSkipTestCase('texture-compression-etc2');
   }
 
-  // TODO: Should actually test createTexture with an ETC format here.
+  const shouldError = !textureCompressionETC2;
+  t.expectGPUError(
+  'validation',
+  () => {
+    t.device.createTexture({
+      format: 'etc2-rgb8unorm',
+      size: [4, 4, 1],
+      usage: GPUTextureUsage.TEXTURE_BINDING });
+
+  },
+  shouldError);
+
 });
 //# sourceMappingURL=examples.spec.js.map

@@ -15,16 +15,10 @@ import { unreachable } from '../../../common/util/util.js';
 import {
 
 kTextureFormatInfo,
-kValidTextureFormatsForCopyIB2T } from
+kValidTextureFormatsForCopyE2T } from
 '../../capability_info.js';
-import { GPUTest } from '../../gpu_test.js';
-import { kTexelRepresentationInfo } from '../../util/texture/texel_data.js';
-
-function calculateRowPitch(width, bytesPerPixel) {
-  const bytesPerRow = width * bytesPerPixel;
-  // Rounds up to a multiple of 256 according to WebGPU requirements.
-  return (bytesPerRow - 1 >> 8) + 1 << 8;
-}var
+import { CopyToTextureUtils, isFp16Format } from '../../util/copy_to_texture.js';
+import { kTexelRepresentationInfo } from '../../util/texture/texel_data.js';var
 
 Color;
 
@@ -35,124 +29,14 @@ Color;
 
 
 
-// These two types correspond to |premultiplyAlpha| and |imageOrientation| in |ImageBitmapOptions|.
-(function (Color) {Color[Color["Red"] = 0] = "Red";Color[Color["Green"] = 1] = "Green";Color[Color["Blue"] = 2] = "Blue";Color[Color["White"] = 3] = "White";Color[Color["OpaqueBlack"] = 4] = "OpaqueBlack";Color[Color["TransparentBlack"] = 5] = "TransparentBlack";})(Color || (Color = {}));
-
-
 // Cache for generated pixels.
-const generatedPixelCache =
+(function (Color) {Color[Color["Red"] = 0] = "Red";Color[Color["Green"] = 1] = "Green";Color[Color["Blue"] = 2] = "Blue";Color[Color["Black"] = 3] = "Black";Color[Color["White"] = 4] = "White";Color[Color["SemitransparentWhite"] = 5] = "SemitransparentWhite";})(Color || (Color = {}));const generatedPixelCache = new Map();
 
-
-new Map();
-
-class F extends GPUTest {
-  checkCopyImageBitmapResult(
-  src,
-  expected,
-  width,
-  height,
-  bytesPerPixel)
-  {
-    const exp = new Uint8Array(expected.buffer, expected.byteOffset, expected.byteLength);
-    const rowPitch = calculateRowPitch(width, bytesPerPixel);
-    const dst = this.createCopyForMapRead(src, 0, rowPitch * height);
-
-    this.eventualAsyncExpectation(async niceStack => {
-      await dst.mapAsync(GPUMapMode.READ);
-      const actual = new Uint8Array(dst.getMappedRange());
-      const check = this.checkBufferWithRowPitch(
-      actual,
-      exp,
-      width,
-      height,
-      rowPitch,
-      bytesPerPixel);
-
-      if (check !== undefined) {
-        niceStack.message = check;
-        this.rec.expectationFailed(niceStack);
-      }
-      dst.destroy();
-    });
-  }
-
-  checkBufferWithRowPitch(
-  actual,
-  exp,
-  width,
-  height,
-  rowPitch,
-  bytesPerPixel)
-  {
-    const failedByteIndices = [];
-    const failedByteExpectedValues = [];
-    const failedByteActualValues = [];
-    iLoop: for (let i = 0; i < height; ++i) {
-      const bytesPerRow = width * bytesPerPixel;
-      for (let j = 0; j < bytesPerRow; ++j) {
-        const indexExp = j + i * bytesPerRow;
-        const indexActual = j + rowPitch * i;
-        if (actual[indexActual] !== exp[indexExp]) {
-          if (failedByteIndices.length >= 4) {
-            failedByteIndices.push('...');
-            failedByteExpectedValues.push('...');
-            failedByteActualValues.push('...');
-            break iLoop;
-          }
-          failedByteIndices.push(`(${i},${j})`);
-          failedByteExpectedValues.push(exp[indexExp].toString());
-          failedByteActualValues.push(actual[indexActual].toString());
-        }
-      }
-    }
-    if (failedByteIndices.length > 0) {
-      return `at [${failedByteIndices.join(', ')}], \
-expected [${failedByteExpectedValues.join(', ')}], \
-got [${failedByteActualValues.join(', ')}]`;
-    }
-    return undefined;
-  }
-
-  doTestAndCheckResult(
-  imageBitmapCopyView,
-  dstTextureCopyView,
-  copySize,
-  bytesPerPixel,
-  expectedData)
-  {
-    this.device.queue.copyImageBitmapToTexture(imageBitmapCopyView, dstTextureCopyView, copySize);
-
-    const imageBitmap = imageBitmapCopyView.imageBitmap;
-    const dstTexture = dstTextureCopyView.texture;
-
-    const bytesPerRow = calculateRowPitch(imageBitmap.width, bytesPerPixel);
-    const testBuffer = this.device.createBuffer({
-      size: bytesPerRow * imageBitmap.height,
-      usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
-
-
-    const encoder = this.device.createCommandEncoder();
-
-    encoder.copyTextureToBuffer(
-    { texture: dstTexture, mipLevel: 0, origin: { x: 0, y: 0, z: 0 } },
-    { buffer: testBuffer, bytesPerRow },
-    { width: imageBitmap.width, height: imageBitmap.height, depthOrArrayLayers: 1 });
-
-    this.device.queue.submit([encoder.finish()]);
-
-    this.checkCopyImageBitmapResult(
-    testBuffer,
-    expectedData,
-    imageBitmap.width,
-    imageBitmap.height,
-    bytesPerPixel);
-
-  }
-
+class F extends CopyToTextureUtils {
   generatePixel(
   color,
   format,
-  transparentOp)
+  hasTransparentPixels)
   {
     let formatEntry = generatedPixelCache.get(format);
     if (formatEntry === undefined) {
@@ -160,14 +44,9 @@ got [${failedByteActualValues.join(', ')}]`;
       generatedPixelCache.set(format, formatEntry);
     }
 
-    let colorEntry = formatEntry.get(color);
+    const colorEntry = formatEntry.get(color);
     if (colorEntry === undefined) {
-      colorEntry = new Map();
-      formatEntry.set(color, colorEntry);
-    }
-
-    // None of the dst texture format is 'uint' or 'sint', so we can always use float value.
-    if (!colorEntry.has(transparentOp)) {
+      // None of the dst texture format is 'uint' or 'sint', so we can always use float value.
       const rep = kTexelRepresentationInfo[format];
       let rgba;
       switch (color) {
@@ -180,30 +59,24 @@ got [${failedByteActualValues.join(', ')}]`;
         case Color.Blue:
           rgba = { R: 0.0, G: 0.0, B: 1.0, A: 1.0 };
           break;
-        case Color.White:
+        case Color.Black:
           rgba = { R: 0.0, G: 0.0, B: 0.0, A: 1.0 };
           break;
-        case Color.OpaqueBlack:
+        case Color.White:
           rgba = { R: 1.0, G: 1.0, B: 1.0, A: 1.0 };
           break;
-        case Color.TransparentBlack:
-          rgba = { R: 1.0, G: 1.0, B: 1.0, A: 0.0 };
+        case Color.SemitransparentWhite:
+          rgba = { R: 1.0, G: 1.0, B: 1.0, A: 0.6 };
           break;
         default:
           unreachable();}
 
 
-      if (transparentOp === 'premultiply') {
-        rgba.R *= rgba.A;
-        rgba.G *= rgba.A;
-        rgba.B *= rgba.A;
-      }
-
       const pixels = new Uint8Array(rep.pack(rep.encode(rgba)));
-      colorEntry.set(transparentOp, pixels);
+      formatEntry.set(color, pixels);
     }
 
-    return colorEntry.get(transparentOp);
+    return formatEntry.get(color);
   }
 
   // Helper functions to generate imagePixels based input configs.
@@ -211,9 +84,7 @@ got [${failedByteActualValues.join(', ')}]`;
     format,
     width,
     height,
-    transparentOp,
-    orientationOp })
-
+    hasTransparentPixels })
 
 
 
@@ -224,16 +95,14 @@ got [${failedByteActualValues.join(', ')}]`;
 
     // Generate input contents by iterating 'Color' enum
     const imagePixels = new Uint8ClampedArray(bytesPerPixel * width * height);
-    const testColors = [Color.Red, Color.Green, Color.Blue, Color.White, Color.OpaqueBlack];
-    if (transparentOp !== 'non-transparent') testColors.push(Color.TransparentBlack);
+    const testColors = [Color.Red, Color.Green, Color.Blue, Color.Black, Color.White];
+    if (hasTransparentPixels) testColors.push(Color.SemitransparentWhite);
 
     for (let i = 0; i < height; ++i) {
       for (let j = 0; j < width; ++j) {
         const pixelPos = i * width + j;
-        const currentColorIndex =
-        orientationOp === 'flipY' ? (height - i - 1) * width + j : pixelPos;
-        const currentPixel = testColors[currentColorIndex % testColors.length];
-        const pixelData = this.generatePixel(currentPixel, format, transparentOp);
+        const currentPixel = testColors[pixelPos % testColors.length];
+        const pixelData = this.generatePixel(currentPixel, format, hasTransparentPixels);
         imagePixels.set(pixelData, pixelPos * bytesPerPixel);
       }
     }
@@ -250,27 +119,60 @@ desc(
   Test ImageBitmap generated from ImageData can be copied to WebGPU
   texture correctly. These imageBitmaps are highly possible living
   in CPU back resource.
+
+  It generates pixels in ImageData one by one based on a color list:
+  [Red, Green, Blue, Black, White, SemitransparentWhite].
+
+  Then call copyExternalImageToTexture() to do a full copy to the 0 mipLevel
+  of dst texture, and read the contents out to compare with the ImageBitmap contents.
+
+  Do premultiply alpha during copy if 'premultipliedAlpha' in 'GPUImageCopyTextureTagged'
+  is set to 'true' and do unpremultiply alpha if it is set to 'false'.
+
+  If 'flipY' in 'GPUImageCopyExternalImage' is set to 'true', copy will ensure the result
+  is flipped.
+
+  The tests covers:
+  - Valid canvas type
+  - Source WebGPU Canvas lives in the same GPUDevice or different GPUDevice as test
+  - Valid dstColorFormat of copyExternalImageToTexture()
+  - Valid source image alphaMode
+  - Valid dest alphaMode
+  - Valid 'flipY' config in 'GPUImageCopyExternalImage' (named 'srcDoFlipYDuringCopy' in cases)
+  - TODO(#913): color space tests need to be added
+  - TODO: Add error tolerance for rgb10a2unorm dst texture format
+
+  And the expected results are all passed.
   `).
 
 params((u) =>
 u.
 combine('alpha', ['none', 'premultiply']).
 combine('orientation', ['none', 'flipY']).
-combine('dstColorFormat', kValidTextureFormatsForCopyIB2T).
+combine('srcDoFlipYDuringCopy', [true, false]).
+combine('dstColorFormat', kValidTextureFormatsForCopyE2T).
+combine('dstPremultiplied', [true, false]).
 beginSubcases().
 combine('width', [1, 2, 4, 15, 255, 256]).
 combine('height', [1, 2, 4, 15, 255, 256])).
 
 fn(async t => {
-  const { width, height, alpha, orientation, dstColorFormat } = t.params;
+  const {
+    width,
+    height,
+    alpha,
+    orientation,
+    dstColorFormat,
+    dstPremultiplied,
+    srcDoFlipYDuringCopy } =
+  t.params;
 
   // Generate input contents by iterating 'Color' enum
   const imagePixels = t.getImagePixels({
     format: 'rgba8unorm',
     width,
     height,
-    transparentOp: 'none',
-    orientationOp: 'none' });
+    hasTransparentPixels: true });
 
 
   // Generate correct expected values
@@ -293,20 +195,39 @@ fn(async t => {
 
   // Construct expected value for different dst color format
   const dstBytesPerPixel = kTextureFormatInfo[dstColorFormat].bytesPerBlock;
-  const expectedPixels = t.getImagePixels({
-    format: dstColorFormat,
-    width,
-    height,
-    transparentOp: alpha,
-    orientationOp: orientation });
+  const srcPremultiplied = alpha === 'premultiply';
+  const sourceImageBitmapPixels = t.getSourceImageBitmapPixels(
+  imagePixels,
+  width,
+  height,
+  srcPremultiplied,
+  orientation === 'flipY');
+
+
+  const format = kTextureFormatInfo[dstColorFormat].baseFormat ?? dstColorFormat;
+
+  const expectedPixels = t.getExpectedPixels(
+  sourceImageBitmapPixels,
+  width,
+  height,
+  format,
+  srcPremultiplied,
+  dstPremultiplied,
+  srcDoFlipYDuringCopy);
 
 
   t.doTestAndCheckResult(
-  { imageBitmap, origin: { x: 0, y: 0 } },
-  { texture: dst },
+  { source: imageBitmap, origin: { x: 0, y: 0 }, flipY: srcDoFlipYDuringCopy },
+  {
+    texture: dst,
+    origin: { x: 0, y: 0 },
+    colorSpace: 'srgb',
+    premultipliedAlpha: dstPremultiplied },
+
   { width: imageBitmap.width, height: imageBitmap.height, depthOrArrayLayers: 1 },
   dstBytesPerPixel,
-  expectedPixels);
+  expectedPixels,
+  isFp16Format(dstColorFormat));
 
 });
 
@@ -315,18 +236,51 @@ desc(
 `
   Test ImageBitmap generated from canvas/offscreenCanvas can be copied to WebGPU
   texture correctly. These imageBitmaps are highly possible living in GPU back resource.
+
+  It generates pixels in ImageData one by one based on a color list:
+  [Red, Green, Blue, Black, White].
+
+  Then call copyExternalImageToTexture() to do a full copy to the 0 mipLevel
+  of dst texture, and read the contents out to compare with the ImageBitmap contents.
+
+  Do premultiply alpha during copy if 'premultipliedAlpha' in 'GPUImageCopyTextureTagged'
+  is set to 'true' and do unpremultiply alpha if it is set to 'false'.
+
+  If 'flipY' in 'GPUImageCopyExternalImage' is set to 'true', copy will ensure the result
+  is flipped.
+
+  The tests covers:
+  - Valid canvas type
+  - Source WebGPU Canvas lives in the same GPUDevice or different GPUDevice as test
+  - Valid dstColorFormat of copyExternalImageToTexture()
+  - Valid source image alphaMode
+  - Valid dest alphaMode
+  - Valid 'flipY' config in 'GPUImageCopyExternalImage' (named 'srcDoFlipYDuringCopy' in cases)
+  - TODO(#913): color space tests need to be added
+  - TODO: Add error tolerance for rgb10a2unorm dst texture format
+
+  And the expected results are all passed.
   `).
 
 params((u) =>
 u.
 combine('orientation', ['none', 'flipY']).
-combine('dstColorFormat', kValidTextureFormatsForCopyIB2T).
+combine('srcDoFlipYDuringCopy', [true, false]).
+combine('dstColorFormat', kValidTextureFormatsForCopyE2T).
+combine('dstPremultiplied', [true, false]).
 beginSubcases().
 combine('width', [1, 2, 4, 15, 255, 256]).
 combine('height', [1, 2, 4, 15, 255, 256])).
 
 fn(async t => {
-  const { width, height, orientation, dstColorFormat } = t.params;
+  const {
+    width,
+    height,
+    orientation,
+    dstColorFormat,
+    dstPremultiplied,
+    srcDoFlipYDuringCopy } =
+  t.params;
 
   // CTS sometimes runs on worker threads, where document is not available.
   // In this case, OffscreenCanvas can be used instead of <canvas>.
@@ -357,8 +311,7 @@ fn(async t => {
     format: 'rgba8unorm',
     width,
     height,
-    transparentOp: 'non-transparent',
-    orientationOp: 'none' });
+    hasTransparentPixels: false });
 
 
   const imageData = new ImageData(imagePixels, width, height);
@@ -383,20 +336,39 @@ fn(async t => {
 
 
   const dstBytesPerPixel = kTextureFormatInfo[dstColorFormat].bytesPerBlock;
-  const expectedData = t.getImagePixels({
-    format: dstColorFormat,
-    width,
-    height,
-    transparentOp: 'non-transparent',
-    orientationOp: orientation });
+
+  const sourceImageBitmapPixels = t.getSourceImageBitmapPixels(
+  imagePixels,
+  width,
+  height,
+  true,
+  orientation === 'flipY');
+
+
+  const format = kTextureFormatInfo[dstColorFormat].baseFormat ?? dstColorFormat;
+
+  const expectedPixels = t.getExpectedPixels(
+  sourceImageBitmapPixels,
+  width,
+  height,
+  format,
+  true,
+  dstPremultiplied,
+  srcDoFlipYDuringCopy);
 
 
   t.doTestAndCheckResult(
-  { imageBitmap, origin: { x: 0, y: 0 } },
-  { texture: dst },
+  { source: imageBitmap, origin: { x: 0, y: 0 }, flipY: srcDoFlipYDuringCopy },
+  {
+    texture: dst,
+    origin: { x: 0, y: 0 },
+    colorSpace: 'srgb',
+    premultipliedAlpha: dstPremultiplied },
+
   { width: imageBitmap.width, height: imageBitmap.height, depthOrArrayLayers: 1 },
   dstBytesPerPixel,
-  expectedData);
+  expectedPixels,
+  isFp16Format(dstColorFormat));
 
 });
 //# sourceMappingURL=ImageBitmap.spec.js.map

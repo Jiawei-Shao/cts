@@ -3,21 +3,22 @@ Basic command buffer compute tests.
 `;
 
 import { makeTestGroup } from '../../../../common/framework/test_group.js';
+import { DefaultLimits } from '../../../constants.js';
 import { GPUTest } from '../../../gpu_test.js';
 import { checkElementsEqualGenerated } from '../../../util/check_contents.js';
 
 export const g = makeTestGroup(GPUTest);
 
+const kMaxComputeWorkgroupSize = [
+  DefaultLimits.maxComputeWorkgroupSizeX,
+  DefaultLimits.maxComputeWorkgroupSizeY,
+  DefaultLimits.maxComputeWorkgroupSizeZ,
+];
+
 g.test('memcpy').fn(async t => {
   const data = new Uint32Array([0x01020304]);
 
-  const src = t.device.createBuffer({
-    mappedAtCreation: true,
-    size: 4,
-    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE,
-  });
-  new Uint32Array(src.getMappedRange()).set(data);
-  src.unmap();
+  const src = t.makeBufferWithContents(data, GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE);
 
   const dst = t.device.createBuffer({
     size: 4,
@@ -28,14 +29,14 @@ g.test('memcpy').fn(async t => {
     compute: {
       module: t.device.createShaderModule({
         code: `
-          [[block]] struct Data {
+          struct Data {
               value : u32;
           };
 
-          [[group(0), binding(0)]] var<storage, read> src : Data;
-          [[group(0), binding(1)]] var<storage, read_write> dst : Data;
+          @group(0) @binding(0) var<storage, read> src : Data;
+          @group(0) @binding(1) var<storage, read_write> dst : Data;
 
-          [[stage(compute)]] fn main() {
+          @stage(compute) @workgroup_size(1) fn main() {
             dst.value = src.value;
             return;
           }
@@ -65,22 +66,23 @@ g.test('memcpy').fn(async t => {
 });
 
 g.test('large_dispatch')
-  .desc(
-    `
-TODO: add query for the maximum dispatch size and test closer to those limits.
-
-Test reasonably-sized large dispatches (see also stress tests).
-`
-  )
+  .desc(`Test reasonably-sized large dispatches (see also: stress tests).`)
   .params(u =>
     u
       // Reasonably-sized powers of two, and some stranger larger sizes.
-      .combine('dispatchSize', [256, 512, 1024, 2048, 315, 628, 1053, 2179] as const)
+      .combine('dispatchSize', [
+        256,
+        2048,
+        315,
+        628,
+        2179,
+        DefaultLimits.maxComputeWorkgroupsPerDimension,
+      ])
       // Test some reasonable workgroup sizes.
-      .combine('workgroupSize', [1, 2, 4, 8, 16, 32, 64] as const)
       .beginSubcases()
       // 0 == x axis; 1 == y axis; 2 == z axis.
       .combine('largeDimension', [0, 1, 2] as const)
+      .expand('workgroupSize', p => [1, 2, 8, 32, kMaxComputeWorkgroupSize[p.largeDimension]])
   )
   .fn(async t => {
     // The output storage buffer is filled with this value.
@@ -105,15 +107,15 @@ Test reasonably-sized large dispatches (see also stress tests).
       compute: {
         module: t.device.createShaderModule({
           code: `
-            [[block]] struct OutputBuffer {
+            struct OutputBuffer {
               value : array<u32>;
             };
 
-            [[group(0), binding(0)]] var<storage, read_write> dst : OutputBuffer;
+            @group(0) @binding(0) var<storage, read_write> dst : OutputBuffer;
 
-            [[stage(compute), workgroup_size(${wgSizes[0]}, ${wgSizes[1]}, ${wgSizes[2]})]]
+            @stage(compute) @workgroup_size(${wgSizes[0]}, ${wgSizes[1]}, ${wgSizes[2]})
             fn main(
-              [[builtin(global_invocation_id)]] GlobalInvocationID : vec3<u32>
+              @builtin(global_invocation_id) GlobalInvocationID : vec3<u32>
             ) {
               var xExtent : u32 = ${dims[0]}u * ${wgSizes[0]}u;
               var yExtent : u32 = ${dims[1]}u * ${wgSizes[1]}u;

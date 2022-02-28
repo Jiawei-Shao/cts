@@ -12,7 +12,7 @@ kVertexFormatInfo } from
 import { ValidationTest } from './validation_test.js';
 
 const VERTEX_SHADER_CODE_WITH_NO_INPUT = `
-  [[stage(vertex)]] fn main() -> [[builtin(position)]] vec4<f32> {
+  @stage(vertex) fn main() -> @builtin(position) vec4<f32> {
     return vec4<f32>(0.0, 0.0, 0.0, 0.0);
   }
 `;
@@ -70,7 +70,7 @@ class F extends ValidationTest {
       fragment: {
         module: this.device.createShaderModule({
           code: `
-            [[stage(fragment)]] fn main() -> [[location(0)]] vec4<f32> {
+            @stage(fragment) fn main() -> @location(0) vec4<f32> {
               return vec4<f32>(0.0, 1.0, 0.0, 1.0);
             }` }),
 
@@ -90,7 +90,7 @@ class F extends ValidationTest {
     const vsModule = this.device.createShaderModule({ code: vertexShader });
     const fsModule = this.device.createShaderModule({
       code: `
-        [[stage(fragment)]] fn main() -> [[location(0)]] vec4<f32> {
+        @stage(fragment) fn main() -> @location(0) vec4<f32> {
           return vec4<f32>(0.0, 1.0, 0.0, 1.0);
         }` });
 
@@ -118,7 +118,7 @@ class F extends ValidationTest {
 
     let count = 0;
     for (const input of inputs) {
-      interfaces += `[[location(${input.location})]] input${count} : ${input.type};\n`;
+      interfaces += `@location(${input.location}) input${count} : ${input.type};\n`;
       body += `var i${count} : ${input.type} = input.input${count};\n`;
       count++;
     }
@@ -127,7 +127,7 @@ class F extends ValidationTest {
       struct Inputs {
         ${interfaces}
       };
-      [[stage(vertex)]] fn main(input : Inputs) -> [[builtin(position)]] vec4<f32> {
+      @stage(vertex) fn main(input : Inputs) -> @builtin(position) vec4<f32> {
         ${body}
         return vec4<f32>(0.0, 0.0, 0.0, 0.0);
       }
@@ -513,14 +513,17 @@ combine('arrayStride', [256, kMaxVertexBufferArrayStride]).
 expand('offset', p => {
   const { bytesPerComponent, componentCount } = kVertexFormatInfo[p.format];
   const formatSize = bytesPerComponent * componentCount;
-  const halfAlignment = Math.floor(bytesPerComponent / 2);
 
   return new Set([
   0,
-  halfAlignment,
-  bytesPerComponent,
+  Math.floor(formatSize / 2),
+  formatSize,
+  2,
+  4,
   p.arrayStride - formatSize,
-  p.arrayStride - formatSize - halfAlignment]);
+  p.arrayStride - formatSize - Math.floor(formatSize / 2),
+  p.arrayStride - formatSize - 4,
+  p.arrayStride - formatSize - 2]);
 
 }).
 beginSubcases().
@@ -549,7 +552,10 @@ fn(t => {
   const vertexBuffers = [];
   vertexBuffers[vertexBufferIndex] = { arrayStride, attributes };
 
-  const success = offset % kVertexFormatInfo[format].bytesPerComponent === 0;
+  const formatInfo = kVertexFormatInfo[format];
+  const formatSize = formatInfo.bytesPerComponent * formatInfo.componentCount;
+  const success = offset % Math.min(4, formatSize) === 0;
+
   t.testVertexState(success, vertexBuffers);
 });
 
@@ -577,17 +583,20 @@ expand('offset', function* (p) {
   const { bytesPerComponent, componentCount } = kVertexFormatInfo[p.format];
   const formatSize = bytesPerComponent * componentCount;
   yield 0;
-  yield bytesPerComponent;
+  yield 4;
 
   // arrayStride = 0 is a special case because for the offset validation it acts the same
-  // as arrayStride = kMaxVertexBufferArrayStride. We branch so as to avoid adding negative
-  // offsets that would cause an IDL exception to be thrown instead of a validation error.
-  if (p.arrayStride === 0) {
-    yield kMaxVertexBufferArrayStride - formatSize;
-    yield kMaxVertexBufferArrayStride - formatSize + bytesPerComponent;
-  } else {
-    yield p.arrayStride - formatSize;
-    yield p.arrayStride - formatSize + bytesPerComponent;
+  // as arrayStride = kMaxVertexBufferArrayStride. We special case here so as to avoid adding
+  // negative offsets that would cause an IDL exception to be thrown instead of a validation
+  // error.
+  const stride = p.arrayStride !== 0 ? p.arrayStride : kMaxVertexBufferArrayStride;
+  yield stride - formatSize;
+  yield stride - formatSize + 4;
+
+  // Avoid adding duplicate cases when formatSize == 4 (it is already tested above)
+  if (formatSize !== 4) {
+    yield formatSize;
+    yield stride;
   }
 }).
 combine('vertexBufferIndex', [0, 1, kMaxVertexBuffers - 1]).

@@ -1,7 +1,7 @@
 export const description = `API Operation Tests for RenderPass StoreOp.
 Tests a render pass with a resolveTarget resolves correctly for many combinations of:
   - number of color attachments, some with and some without a resolveTarget
-  - renderPass storeOp set to {'store', 'clear'}
+  - renderPass storeOp set to {'store', 'discard'}
   - resolveTarget mip level {0, >0} (TODO?: different mip level from colorAttachment)
   - resolveTarget {2d array layer, TODO: 3d slice} {0, >0} with {2d, TODO: 3d} resolveTarget
     (TODO?: different z from colorAttachment)
@@ -30,7 +30,7 @@ export const g = makeTestGroup(GPUTest);
 g.test('render_pass_resolve')
   .params(u =>
     u
-      .combine('storeOperation', ['clear', 'store'] as const)
+      .combine('storeOperation', ['discard', 'store'] as const)
       .beginSubcases()
       .combine('numColorAttachments', [2, 4] as const)
       .combine('slotsToResolve', kSlotsToResolve)
@@ -52,9 +52,9 @@ g.test('render_pass_resolve')
       vertex: {
         module: t.device.createShaderModule({
           code: `
-            [[stage(vertex)]] fn main(
-              [[builtin(vertex_index)]] VertexIndex : u32
-              ) -> [[builtin(position)]] vec4<f32> {
+            @stage(vertex) fn main(
+              @builtin(vertex_index) VertexIndex : u32
+              ) -> @builtin(position) vec4<f32> {
               var pos : array<vec2<f32>, 3> = array<vec2<f32>, 3>(
                   vec2<f32>(-1.0, -1.0),
                   vec2<f32>(-1.0,  1.0),
@@ -68,13 +68,13 @@ g.test('render_pass_resolve')
         module: t.device.createShaderModule({
           code: `
             struct Output {
-              [[location(0)]] fragColor0 : vec4<f32>;
-              [[location(1)]] fragColor1 : vec4<f32>;
-              [[location(2)]] fragColor2 : vec4<f32>;
-              [[location(3)]] fragColor3 : vec4<f32>;
+              @location(0) fragColor0 : vec4<f32>;
+              @location(1) fragColor1 : vec4<f32>;
+              @location(2) fragColor2 : vec4<f32>;
+              @location(3) fragColor3 : vec4<f32>;
             };
 
-            [[stage(fragment)]] fn main() -> Output {
+            @stage(fragment) fn main() -> Output {
               return Output(
                 vec4<f32>(1.0, 1.0, 1.0, 1.0),
                 vec4<f32>(1.0, 1.0, 1.0, 1.0),

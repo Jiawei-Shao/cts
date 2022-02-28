@@ -22,6 +22,11 @@ export const listing = [
   },
   {
     "file": [
+      "conversion"
+    ]
+  },
+  {
+    "file": [
       "getStackTrace"
     ]
   },
@@ -33,6 +38,11 @@ export const listing = [
   {
     "file": [
       "logger"
+    ]
+  },
+  {
+    "file": [
+      "maths"
     ]
   },
   {

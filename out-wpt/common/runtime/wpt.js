@@ -1,6 +1,6 @@
 /**
  * AUTO-GENERATED - DO NOT EDIT. Source: https://github.com/gpuweb/cts
- **/ // Implements the wpt-embedded test runner (see also: wpt/cts.html).
+ **/ // Implements the wpt-embedded test runner (see also: wpt/cts.https.html).
 import { DefaultTestFileLoader } from '../internal/file_loader.js';
 import { prettyPrintLog } from '../internal/logging/log_message.js';
 import { Logger } from '../internal/logging/logger.js';
@@ -22,6 +22,9 @@ setup({
 (async () => {
   const workerEnabled = optionEnabled('worker');
   const worker = workerEnabled ? new TestWorker(false) : undefined;
+
+  const failOnWarnings =
+    typeof shouldWebGPUCTSFailOnWarnings !== 'undefined' && (await shouldWebGPUCTSFailOnWarnings);
 
   const loader = new DefaultTestFileLoader();
   const qs = new URLSearchParams(window.location.search).getAll('q');
@@ -54,7 +57,7 @@ setup({
       }
 
       // Unfortunately, it seems not possible to surface any logs for warn/skip.
-      if (res.status === 'fail') {
+      if (res.status === 'fail' || (res.status === 'warn' && failOnWarnings)) {
         const logs = (res.logs ?? []).map(prettyPrintLog);
         assert_unreached('\n' + logs.join('\n') + '\n');
       }

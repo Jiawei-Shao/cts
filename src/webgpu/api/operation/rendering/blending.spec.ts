@@ -9,33 +9,11 @@ TODO:
 
 import { makeTestGroup } from '../../../../common/framework/test_group.js';
 import { assert, unreachable } from '../../../../common/util/util.js';
+import { kBlendFactors, kBlendOperations } from '../../../capability_info.js';
 import { GPUTest } from '../../../gpu_test.js';
+import { float32ToFloat16Bits } from '../../../util/conversion.js';
 
 export const g = makeTestGroup(GPUTest);
-
-const kBlendFactors: GPUBlendFactor[] = [
-  'zero',
-  'one',
-  'src',
-  'one-minus-src',
-  'src-alpha',
-  'one-minus-src-alpha',
-  'dst',
-  'one-minus-dst',
-  'dst-alpha',
-  'one-minus-dst-alpha',
-  'src-alpha-saturated',
-  'constant',
-  'one-minus-constant',
-];
-
-const kBlendOperations: GPUBlendOperation[] = [
-  'add', //
-  'subtract',
-  'reverse-subtract',
-  'min',
-  'max',
-];
 
 function mapColor(
   col: GPUColorDict,
@@ -117,7 +95,7 @@ g.test('GPUBlendComponent')
     `Test all combinations of parameters for GPUBlendComponent.
 
   Tests that parameters are correctly passed to the backend API and blend computations
-  are done correctly by blending a single pixel. The test uses rgba32float as the format
+  are done correctly by blending a single pixel. The test uses rgba16float as the format
   to avoid checking clamping behavior (tested in api,operation,rendering,blending:clamp,*).
 
   Params:
@@ -132,6 +110,12 @@ g.test('GPUBlendComponent')
       .combine('srcFactor', kBlendFactors)
       .combine('dstFactor', kBlendFactors)
       .combine('operation', kBlendOperations)
+      .filter(t => {
+        if (t.operation === 'min' || t.operation === 'max') {
+          return t.srcFactor === 'one' && t.dstFactor === 'one';
+        }
+        return true;
+      })
       .beginSubcases()
       .combine('srcColor', [{ r: 0.11, g: 0.61, b: 0.81, a: 0.44 }])
       .combine('dstColor', [
@@ -148,7 +132,7 @@ g.test('GPUBlendComponent')
       })
   )
   .fn(t => {
-    const textureFormat: GPUTextureFormat = 'rgba32float';
+    const textureFormat: GPUTextureFormat = 'rgba16float';
     const srcColor = t.params.srcColor;
     const dstColor = t.params.dstColor;
     const blendConstant = t.params.blendConstant;
@@ -195,12 +179,12 @@ g.test('GPUBlendComponent')
         ],
         module: t.device.createShaderModule({
           code: `
-[[block]] struct Uniform {
+struct Uniform {
   color: vec4<f32>;
 };
-[[group(0), binding(0)]] var<uniform> u : Uniform;
+@group(0) @binding(0) var<uniform> u : Uniform;
 
-[[stage(fragment)]] fn main() -> [[location(0)]] vec4<f32> {
+@stage(fragment) fn main() -> @location(0) vec4<f32> {
   return u.color;
 }
           `,
@@ -210,7 +194,7 @@ g.test('GPUBlendComponent')
       vertex: {
         module: t.device.createShaderModule({
           code: `
-[[stage(vertex)]] fn main() -> [[builtin(position)]] vec4<f32> {
+@stage(vertex) fn main() -> @builtin(position) vec4<f32> {
     return vec4<f32>(0.0, 0.0, 0.0, 1.0);
 }
           `,
@@ -264,18 +248,25 @@ g.test('GPUBlendComponent')
 
     t.device.queue.submit([commandEncoder.finish()]);
 
-    const tolerance = 0.0001;
+    const tolerance = 0.003;
     const expectedLow = mapColor(expectedColor, v => v - tolerance);
     const expectedHigh = mapColor(expectedColor, v => v + tolerance);
 
-    t.expectSinglePixelBetweenTwoValuesIn2DTexture(
+    t.expectSinglePixelBetweenTwoValuesFloat16In2DTexture(
       renderTarget,
       textureFormat,
       { x: 0, y: 0 },
       {
         exp: [
-          new Float32Array([expectedLow.r, expectedLow.g, expectedLow.b, expectedLow.a]),
-          new Float32Array([expectedHigh.r, expectedHigh.g, expectedHigh.b, expectedHigh.a]),
+          // Use Uint16Array to store Float16 value bits
+          new Uint16Array(
+            [expectedLow.r, expectedLow.g, expectedLow.b, expectedLow.a].map(float32ToFloat16Bits)
+          ),
+          new Uint16Array(
+            [expectedHigh.r, expectedHigh.g, expectedHigh.b, expectedHigh.a].map(
+              float32ToFloat16Bits
+            )
+          ),
         ],
       }
     );
