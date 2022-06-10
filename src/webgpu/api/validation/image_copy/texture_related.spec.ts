@@ -70,14 +70,26 @@ g.test('texture,device_mismatch')
   .paramsSubcasesOnly(u =>
     u.combine('method', kImageCopyTypes).combine('mismatched', [true, false])
   )
-  .unimplemented();
+  .beforeAllSubcases(t => {
+    t.selectMismatchedDeviceOrSkipTestCase(undefined);
+  })
+  .fn(async t => {
+    const { method, mismatched } = t.params;
+    const device = mismatched ? t.mismatchedDevice : t.device;
 
-g.test('buffer,device_mismatch')
-  .desc('Tests the image copies cannot be called with a buffer created from another device')
-  .paramsSubcasesOnly(u =>
-    u.combine('method', ['CopyB2T', 'CopyT2B'] as const).combine('mismatched', [true, false])
-  )
-  .unimplemented();
+    const texture = device.createTexture({
+      size: { width: 4, height: 4, depthOrArrayLayers: 1 },
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST,
+    });
+
+    t.testRun(
+      { texture },
+      { bytesPerRow: 0 },
+      { width: 0, height: 0, depthOrArrayLayers: 0 },
+      { dataSize: 1, method, success: !mismatched }
+    );
+  });
 
 g.test('usage')
   .desc(
@@ -151,7 +163,11 @@ Note: we don't test 1D, 2D array and 3D textures because multisample is not supp
       size: { width: 4, height: 4, depthOrArrayLayers: 1 },
       sampleCount,
       format: 'rgba8unorm',
-      usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING,
+      usage:
+        GPUTextureUsage.COPY_SRC |
+        GPUTextureUsage.COPY_DST |
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.RENDER_ATTACHMENT,
     });
 
     const success = sampleCount === 1;
@@ -243,6 +259,10 @@ Test the copy must be a full subresource if the texture's format is depth/stenci
       // need to examine depth dimension via copyDepthModifier to determine whether it is a full copy for a 3D texture.
       .expand('copyDepthModifier', ({ dimension: d }) => (d === '3d' ? [0, -1] : [0]))
   )
+  .beforeAllSubcases(t => {
+    const info = kTextureFormatInfo[t.params.format];
+    t.selectDeviceOrSkipTestCase(info.feature);
+  })
   .fn(async t => {
     const {
       method,
@@ -256,8 +276,6 @@ Test the copy must be a full subresource if the texture's format is depth/stenci
     } = t.params;
 
     const info = kTextureFormatInfo[format];
-    await t.selectDeviceOrSkipTestCase(info.feature);
-
     const size = { width: 32 * info.blockWidth, height: 32 * info.blockHeight, depthOrArrayLayers };
     if (dimension === '1d') {
       size.height = 1;
@@ -331,6 +349,10 @@ Test that the texture copy origin must be aligned to the format's block size.
       .unless(p => p.dimension === '1d' && p.coordinateToTest !== 'x')
       .expand('valueToCoordinate', texelBlockAlignmentTestExpanderForValueToCoordinate)
   )
+  .beforeAllSubcases(t => {
+    const info = kTextureFormatInfo[t.params.format];
+    t.selectDeviceOrSkipTestCase(info.feature);
+  })
   .fn(async t => {
     const {
       valueToCoordinate,
@@ -341,8 +363,6 @@ Test that the texture copy origin must be aligned to the format's block size.
       dimension,
     } = t.params;
     const info = kTextureFormatInfo[format];
-    await t.selectDeviceOrSkipTestCase(info.feature);
-
     const size = { width: 0, height: 0, depthOrArrayLayers };
     const origin = { x: 0, y: 0, z: 0 };
     let success = true;
@@ -375,7 +395,7 @@ Test that the copy size must be aligned to the texture's format's block size.
 - for various copy methods
 - for all formats (depth-stencil formats require a full copy)
 - for all texture dimensions
-- for the size's parameters to test (width / height / dpeth)
+- for the size's parameters to test (width / height / depth)
 - for various values for that copy size parameters, depending on the block size
 `
   )
@@ -392,11 +412,13 @@ Test that the copy size must be aligned to the texture's format's block size.
       .unless(p => p.dimension === '1d' && p.coordinateToTest !== 'width')
       .expand('valueToCoordinate', texelBlockAlignmentTestExpanderForValueToCoordinate)
   )
+  .beforeAllSubcases(t => {
+    const info = kTextureFormatInfo[t.params.format];
+    t.selectDeviceOrSkipTestCase(info.feature);
+  })
   .fn(async t => {
     const { valueToCoordinate, coordinateToTest, dimension, format, method } = t.params;
     const info = kTextureFormatInfo[format];
-    await t.selectDeviceOrSkipTestCase(info.feature);
-
     const size = { width: 0, height: 0, depthOrArrayLayers: 0 };
     const origin = { x: 0, y: 0, z: 0 };
     let success = true;

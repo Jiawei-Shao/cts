@@ -7,6 +7,11 @@ TODO: per-test descriptions, make test names more succinct
 TODO: review for completeness
 `;
 import { makeTestGroup } from '../../../common/framework/test_group.js';
+import {
+  kDepthStencilFormats,
+  kRenderableColorTextureFormats,
+  kTextureFormatInfo,
+} from '../../capability_info.js';
 
 import { ValidationTest } from './validation_test.js';
 
@@ -36,7 +41,8 @@ class F extends ValidationTest {
 
     return {
       view,
-      loadValue: { r: 1.0, g: 0.0, b: 0.0, a: 1.0 },
+      clearValue: { r: 1.0, g: 0.0, b: 0.0, a: 1.0 },
+      loadOp: 'clear',
       storeOp: 'store',
     };
   }
@@ -46,17 +52,19 @@ class F extends ValidationTest {
 
     return {
       view,
-      depthLoadValue: 1.0,
+      depthClearValue: 1.0,
+      depthLoadOp: 'clear',
       depthStoreOp: 'store',
-      stencilLoadValue: 0,
+      stencilClearValue: 0,
+      stencilLoadOp: 'clear',
       stencilStoreOp: 'store',
     };
   }
 
-  async tryRenderPass(success, descriptor) {
+  tryRenderPass(success, descriptor) {
     const commandEncoder = this.device.createCommandEncoder();
     const renderPass = commandEncoder.beginRenderPass(descriptor);
-    renderPass.endPass();
+    renderPass.end();
 
     this.expectValidationError(() => {
       commandEncoder.finish();
@@ -99,7 +107,7 @@ g.test('OOB_color_attachment_indices_are_handled')
       colorAttachments.push(t.getColorAttachment(colorTexture));
     }
 
-    await t.tryRenderPass(_success, { colorAttachments });
+    t.tryRenderPass(_success, { colorAttachments });
   });
 
 g.test('attachments_must_have_the_same_size').fn(async t => {
@@ -140,7 +148,7 @@ g.test('attachments_must_have_the_same_size').fn(async t => {
       ],
     };
 
-    await t.tryRenderPass(false, descriptor);
+    t.tryRenderPass(false, descriptor);
   }
   {
     // The depth stencil attachment has a different size
@@ -153,7 +161,7 @@ g.test('attachments_must_have_the_same_size').fn(async t => {
       depthStencilAttachment: t.getDepthStencilAttachment(depthStencilTexture2x2),
     };
 
-    await t.tryRenderPass(false, descriptor);
+    t.tryRenderPass(false, descriptor);
   }
 });
 
@@ -167,7 +175,7 @@ g.test('attachments_must_match_whether_they_are_used_for_color_or_depth_stencil'
       colorAttachments: [t.getColorAttachment(depthStencilTexture)],
     };
 
-    await t.tryRenderPass(false, descriptor);
+    t.tryRenderPass(false, descriptor);
   }
   {
     // Using color for depth-stencil
@@ -176,7 +184,7 @@ g.test('attachments_must_match_whether_they_are_used_for_color_or_depth_stencil'
       depthStencilAttachment: t.getDepthStencilAttachment(colorTexture),
     };
 
-    await t.tryRenderPass(false, descriptor);
+    t.tryRenderPass(false, descriptor);
   }
 });
 
@@ -229,7 +237,7 @@ g.test('check_layer_count_for_color_or_depth_stencil')
         colorAttachments: [t.getColorAttachment(colorTexture, textureViewDescriptor)],
       };
 
-      await t.tryRenderPass(_success, descriptor);
+      t.tryRenderPass(_success, descriptor);
     }
     {
       // Check 2D array texture view for depth stencil
@@ -246,7 +254,7 @@ g.test('check_layer_count_for_color_or_depth_stencil')
         ),
       };
 
-      await t.tryRenderPass(_success, descriptor);
+      t.tryRenderPass(_success, descriptor);
     }
   });
 
@@ -299,7 +307,7 @@ g.test('check_mip_level_count_for_color_or_depth_stencil')
         colorAttachments: [t.getColorAttachment(colorTexture, textureViewDescriptor)],
       };
 
-      await t.tryRenderPass(_success, descriptor);
+      t.tryRenderPass(_success, descriptor);
     }
     {
       // Check 2D texture view for depth stencil
@@ -316,7 +324,7 @@ g.test('check_mip_level_count_for_color_or_depth_stencil')
         ),
       };
 
-      await t.tryRenderPass(_success, descriptor);
+      t.tryRenderPass(_success, descriptor);
     }
   });
 
@@ -330,13 +338,14 @@ g.test('it_is_invalid_to_set_resolve_target_if_color_attachment_is_non_multisamp
         {
           view: colorTexture.createView(),
           resolveTarget: resolveTargetTexture.createView(),
-          loadValue: { r: 1.0, g: 0.0, b: 0.0, a: 1.0 },
+          clearValue: { r: 1.0, g: 0.0, b: 0.0, a: 1.0 },
+          loadOp: 'clear',
           storeOp: 'store',
         },
       ],
     };
 
-    await t.tryRenderPass(false, descriptor);
+    t.tryRenderPass(false, descriptor);
   }
 );
 
@@ -361,7 +370,7 @@ g.test('check_the_use_of_multisampled_textures_as_color_attachments').fn(async t
       ],
     };
 
-    await t.tryRenderPass(false, descriptor);
+    t.tryRenderPass(false, descriptor);
   }
 });
 
@@ -376,7 +385,7 @@ g.test('it_is_invalid_to_use_a_multisampled_resolve_target').fn(async t => {
     colorAttachments: [colorAttachment],
   };
 
-  await t.tryRenderPass(false, descriptor);
+  t.tryRenderPass(false, descriptor);
 });
 
 g.test('it_is_invalid_to_use_a_resolve_target_with_array_layer_count_greater_than_1').fn(
@@ -391,7 +400,7 @@ g.test('it_is_invalid_to_use_a_resolve_target_with_array_layer_count_greater_tha
       colorAttachments: [colorAttachment],
     };
 
-    await t.tryRenderPass(false, descriptor);
+    t.tryRenderPass(false, descriptor);
   }
 );
 
@@ -407,7 +416,7 @@ g.test('it_is_invalid_to_use_a_resolve_target_with_mipmap_level_count_greater_th
       colorAttachments: [colorAttachment],
     };
 
-    await t.tryRenderPass(false, descriptor);
+    t.tryRenderPass(false, descriptor);
   }
 );
 
@@ -424,7 +433,7 @@ g.test('it_is_invalid_to_use_a_resolve_target_whose_usage_is_not_RENDER_ATTACHME
     colorAttachments: [colorAttachment],
   };
 
-  await t.tryRenderPass(false, descriptor);
+  t.tryRenderPass(false, descriptor);
 });
 
 g.test('it_is_invalid_to_use_a_resolve_target_in_error_state').fn(async t => {
@@ -446,7 +455,7 @@ g.test('it_is_invalid_to_use_a_resolve_target_in_error_state').fn(async t => {
     colorAttachments: [colorAttachment],
   };
 
-  await t.tryRenderPass(false, descriptor);
+  t.tryRenderPass(false, descriptor);
 });
 
 g.test('use_of_multisampled_attachment_and_non_multisampled_resolve_target_is_allowed').fn(
@@ -477,7 +486,7 @@ g.test('use_a_resolve_target_in_a_format_different_than_the_attachment_is_not_al
       colorAttachments: [colorAttachment],
     };
 
-    await t.tryRenderPass(false, descriptor);
+    t.tryRenderPass(false, descriptor);
   }
 );
 
@@ -503,7 +512,7 @@ g.test('size_of_the_resolve_target_must_be_the_same_as_the_color_attachment').fn
       colorAttachments: [colorAttachment],
     };
 
-    await t.tryRenderPass(false, descriptor);
+    t.tryRenderPass(false, descriptor);
   }
   {
     const resolveTargetTextureView = resolveTargetTexture.createView({ baseMipLevel: 1 });
@@ -539,7 +548,7 @@ g.test('check_depth_stencil_attachment_sample_counts_mismatch').fn(async t => {
       depthStencilAttachment: t.getDepthStencilAttachment(depthStencilTexture),
     };
 
-    await t.tryRenderPass(false, descriptor);
+    t.tryRenderPass(false, descriptor);
   }
   {
     const colorTexture = t.createTexture({ sampleCount: 1 });
@@ -548,7 +557,7 @@ g.test('check_depth_stencil_attachment_sample_counts_mismatch').fn(async t => {
       depthStencilAttachment: t.getDepthStencilAttachment(multisampledDepthStencilTexture),
     };
 
-    await t.tryRenderPass(false, descriptor);
+    t.tryRenderPass(false, descriptor);
   }
   {
     // It is allowed to use a multisampled depth stencil attachment whose sample count is equal to
@@ -571,3 +580,93 @@ g.test('check_depth_stencil_attachment_sample_counts_mismatch').fn(async t => {
     t.tryRenderPass(true, descriptor);
   }
 });
+
+g.test('depth_stencil_attachment')
+  .desc(
+    `
+  Test GPURenderPassDepthStencilAttachment Usage:
+  - depthReadOnly and stencilReadOnly must match if the format is a combined depth-stencil format.
+  - depthLoadOp and depthStoreOp must be provided iff the format has a depth aspect and depthReadOnly is not true.
+  - stencilLoadOp and stencilStoreOp must be provided iff the format has a stencil aspect and stencilReadOnly is not true.
+  `
+  )
+  .params(u =>
+    u //
+      .combine('format', kDepthStencilFormats)
+      .beginSubcases()
+      .combine('depthReadOnly', [false, true])
+      .combine('stencilReadOnly', [false, true])
+      .combine('setDepthLoadStoreOp', [false, true])
+      .combine('setStencilLoadStoreOp', [false, true])
+  )
+  .beforeAllSubcases(t => {
+    t.selectDeviceForTextureFormatOrSkipTestCase(t.params.format);
+  })
+  .fn(async t => {
+    const {
+      format,
+      depthReadOnly,
+      stencilReadOnly,
+      setDepthLoadStoreOp,
+      setStencilLoadStoreOp,
+    } = t.params;
+
+    let isValid = true;
+    const info = kTextureFormatInfo[format];
+    if (info.depth && info.stencil) {
+      isValid &&= depthReadOnly === stencilReadOnly;
+    }
+
+    if (info.depth && !depthReadOnly) {
+      isValid &&= setDepthLoadStoreOp;
+    } else {
+      isValid &&= !setDepthLoadStoreOp;
+    }
+
+    if (info.stencil && !stencilReadOnly) {
+      isValid &&= setStencilLoadStoreOp;
+    } else {
+      isValid &&= !setStencilLoadStoreOp;
+    }
+
+    const depthStencilAttachment = {
+      view: t.createTexture({ format }).createView(),
+      depthReadOnly,
+      stencilReadOnly,
+    };
+
+    if (setDepthLoadStoreOp) {
+      depthStencilAttachment.depthLoadOp = 'clear';
+      depthStencilAttachment.depthStoreOp = 'store';
+    }
+    if (setStencilLoadStoreOp) {
+      depthStencilAttachment.stencilLoadOp = 'clear';
+      depthStencilAttachment.stencilStoreOp = 'store';
+    }
+
+    const descriptor = {
+      colorAttachments: [t.getColorAttachment(t.createTexture())],
+      depthStencilAttachment,
+    };
+
+    t.tryRenderPass(isValid, descriptor);
+  });
+
+g.test('multisample_render_target_formats_support_resolve')
+  .params(u =>
+    u
+      .combine('format', kRenderableColorTextureFormats)
+      .filter(t => kTextureFormatInfo[t.format].multisample)
+  )
+  .fn(async t => {
+    const { format } = t.params;
+    const multisampledColorTexture = t.createTexture({ format, sampleCount: 4 });
+    const resolveTarget = t.createTexture({ format });
+
+    const colorAttachment = t.getColorAttachment(multisampledColorTexture);
+    colorAttachment.resolveTarget = resolveTarget.createView();
+
+    t.tryRenderPass(kTextureFormatInfo[format].resolve, {
+      colorAttachments: [colorAttachment],
+    });
+  });

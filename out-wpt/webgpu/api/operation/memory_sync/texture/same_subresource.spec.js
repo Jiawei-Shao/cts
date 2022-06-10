@@ -7,7 +7,6 @@ Memory Synchronization Tests for Texture: read before write, read after write, a
 - TODO: Test depth/stencil attachments.
 - TODO: Use non-solid-color texture contents [2]
 `;
-import { SkipTestCase } from '../../../../../common/framework/fixture.js';
 import { makeTestGroup } from '../../../../../common/framework/test_group.js';
 import { assert, memcpy, unreachable } from '../../../../../common/util/util.js';
 
@@ -15,34 +14,47 @@ import { GPUTest } from '../../../../gpu_test.js';
 import { align } from '../../../../util/math.js';
 import { getTextureCopyLayout } from '../../../../util/texture/layout.js';
 import { kTexelRepresentationInfo } from '../../../../util/texture/texel_data.js';
-
 import {
   kOperationBoundaries,
   kBoundaryInfo,
+  OperationContextHelper,
+} from '../operation_context_helper.js';
+
+import {
   kAllReadOps,
   kAllWriteOps,
   checkOpsValidForContext,
   kOpInfo,
-  kOperationContexts,
 } from './texture_sync_test.js';
 
 export const g = makeTestGroup(GPUTest);
 
-class TextureSyncTestHelper {
-  // We start at the queue context which is top-level.
-  currentContext = 'queue';
+const fullscreenQuadWGSL = `
+  struct VertexOutput {
+    @builtin(position) Position : vec4<f32>
+  };
 
-  // Set based on the current context.
+  @vertex fn vert_main(@builtin(vertex_index) VertexIndex : u32) -> VertexOutput {
+    var pos = array<vec2<f32>, 6>(
+        vec2<f32>( 1.0,  1.0),
+        vec2<f32>( 1.0, -1.0),
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>( 1.0,  1.0),
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>(-1.0,  1.0));
 
-  encodedCommands = [];
+    var output : VertexOutput;
+    output.Position = vec4<f32>(pos[VertexIndex], 0.0, 1.0);
+    return output;
+  }
+`;
 
+class TextureSyncTestHelper extends OperationContextHelper {
   kTextureSize = [4, 4];
   kTextureFormat = 'rgba8unorm';
 
   constructor(t, textureCreationParams) {
-    this.t = t;
-    this.device = t.device;
-    this.queue = t.device.queue;
+    super(t);
     this.texture = t.trackForCleanup(
       t.device.createTexture({
         size: this.kTextureSize,
@@ -119,11 +131,154 @@ class TextureSyncTestHelper {
 
         return texture;
       }
-      case 'sample':
-      case 'storage':
-        // [1] Finish implementation
-        throw new SkipTestCase('unimplemented');
-        break;
+      case 'sample': {
+        const texture = this.t.trackForCleanup(
+          this.device.createTexture({
+            size: this.kTextureSize,
+            format: this.kTextureFormat,
+            usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.STORAGE_BINDING,
+          })
+        );
+
+        const bindGroupLayout = this.device.createBindGroupLayout({
+          entries: [
+            {
+              binding: 0,
+              visibility: GPUShaderStage.FRAGMENT | GPUShaderStage.COMPUTE,
+              texture: {
+                sampleType: 'unfilterable-float',
+              },
+            },
+
+            {
+              binding: 1,
+              visibility: GPUShaderStage.FRAGMENT | GPUShaderStage.COMPUTE,
+              storageTexture: {
+                access: 'write-only',
+                format: this.kTextureFormat,
+              },
+            },
+          ],
+        });
+
+        const bindGroup = this.device.createBindGroup({
+          layout: bindGroupLayout,
+          entries: [
+            {
+              binding: 0,
+              resource: this.texture.createView(),
+            },
+
+            {
+              binding: 1,
+              resource: texture.createView(),
+            },
+          ],
+        });
+
+        switch (context) {
+          case 'render-pass-encoder':
+          case 'render-bundle-encoder': {
+            const module = this.device.createShaderModule({
+              code: `${fullscreenQuadWGSL}
+
+                @group(0) @binding(0) var inputTex: texture_2d<f32>;
+                @group(0) @binding(1) var outputTex: texture_storage_2d<rgba8unorm, write>;
+
+                @fragment fn frag_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
+                  let coord = vec2<i32>(fragCoord.xy);
+                  textureStore(outputTex, coord, textureLoad(inputTex, coord, 0));
+                  return vec4<f32>();
+                }
+              `,
+            });
+
+            const renderPipeline = this.device.createRenderPipeline({
+              layout: this.device.createPipelineLayout({
+                bindGroupLayouts: [bindGroupLayout],
+              }),
+
+              vertex: {
+                module,
+                entryPoint: 'vert_main',
+              },
+
+              fragment: {
+                module,
+                entryPoint: 'frag_main',
+
+                // Unused attachment since we can't use textureStore in the vertex shader.
+                // Set writeMask to zero.
+                targets: [
+                  {
+                    format: this.kTextureFormat,
+                    writeMask: 0,
+                  },
+                ],
+              },
+            });
+
+            switch (context) {
+              case 'render-bundle-encoder':
+                assert(this.renderBundleEncoder !== undefined);
+                this.renderBundleEncoder.setPipeline(renderPipeline);
+                this.renderBundleEncoder.setBindGroup(0, bindGroup);
+                this.renderBundleEncoder.draw(6);
+                break;
+              case 'render-pass-encoder':
+                assert(this.renderPassEncoder !== undefined);
+                this.renderPassEncoder.setPipeline(renderPipeline);
+                this.renderPassEncoder.setBindGroup(0, bindGroup);
+                this.renderPassEncoder.draw(6);
+                break;
+            }
+
+            break;
+          }
+          case 'compute-pass-encoder': {
+            const module = this.device.createShaderModule({
+              code: `
+                @group(0) @binding(0) var inputTex: texture_2d<f32>;
+                @group(0) @binding(1) var outputTex: texture_storage_2d<rgba8unorm, write>;
+
+                @compute @workgroup_size(8, 8)
+                fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
+                  if (any(gid.xy >= vec2<u32>(textureDimensions(inputTex)))) {
+                    return;
+                  }
+                  let coord = vec2<i32>(gid.xy);
+                  textureStore(outputTex, coord, textureLoad(inputTex, coord, 0));
+                }
+              `,
+            });
+
+            const computePipeline = this.device.createComputePipeline({
+              layout: this.device.createPipelineLayout({
+                bindGroupLayouts: [bindGroupLayout],
+              }),
+
+              compute: {
+                module,
+                entryPoint: 'main',
+              },
+            });
+
+            assert(this.computePassEncoder !== undefined);
+            this.computePassEncoder.setPipeline(computePipeline);
+            this.computePassEncoder.setBindGroup(0, bindGroup);
+            this.computePassEncoder.dispatchWorkgroups(
+              Math.ceil(this.kTextureSize[0] / 8),
+              Math.ceil(this.kTextureSize[1] / 8)
+            );
+
+            break;
+          }
+          default:
+            unreachable();
+        }
+
+        return texture;
+      }
       case 'b2t-copy':
       case 'attachment-resolve':
       case 'attachment-store':
@@ -143,7 +298,8 @@ class TextureSyncTestHelper {
             {
               view: this.texture.createView(),
               // [2] Use non-solid-color texture values
-              loadValue: [data.R ?? 0, data.G ?? 0, data.B ?? 0, data.A ?? 0],
+              clearValue: [data.R ?? 0, data.G ?? 0, data.B ?? 0, data.A ?? 0],
+              loadOp: 'clear',
               storeOp: 'store',
             },
           ],
@@ -245,233 +401,165 @@ class TextureSyncTestHelper {
 
         break;
       }
-      case 'attachment-resolve':
-      case 'storage':
-        // [1] Finish implementation
-        throw new SkipTestCase('unimplemented');
+      case 'attachment-resolve': {
+        assert(this.commandEncoder !== undefined);
+        const renderTarget = this.t.trackForCleanup(
+          this.device.createTexture({
+            format: this.kTextureFormat,
+            size: this.kTextureSize,
+            usage: GPUTextureUsage.RENDER_ATTACHMENT,
+            sampleCount: 4,
+          })
+        );
+
+        this.renderPassEncoder = this.commandEncoder.beginRenderPass({
+          colorAttachments: [
+            {
+              view: renderTarget.createView(),
+              resolveTarget: this.texture.createView(),
+              // [2] Use non-solid-color texture values
+              clearValue: [data.R ?? 0, data.G ?? 0, data.B ?? 0, data.A ?? 0],
+              loadOp: 'clear',
+              storeOp: 'discard',
+            },
+          ],
+        });
+
+        this.currentContext = 'render-pass-encoder';
+        break;
+      }
+      case 'storage': {
+        const bindGroupLayout = this.device.createBindGroupLayout({
+          entries: [
+            {
+              binding: 0,
+              visibility: GPUShaderStage.FRAGMENT | GPUShaderStage.COMPUTE,
+              storageTexture: {
+                access: 'write-only',
+                format: this.kTextureFormat,
+              },
+            },
+          ],
+        });
+
+        const bindGroup = this.device.createBindGroup({
+          layout: bindGroupLayout,
+          entries: [
+            {
+              binding: 0,
+              resource: this.texture.createView(),
+            },
+          ],
+        });
+
+        // [2] Use non-solid-color texture values
+        const storedValue = `vec4<f32>(${[data.R ?? 0, data.G ?? 0, data.B ?? 0, data.A ?? 0]
+          .map(x => x.toFixed(5))
+          .join(', ')})`;
+
+        switch (context) {
+          case 'render-pass-encoder':
+          case 'render-bundle-encoder': {
+            const module = this.device.createShaderModule({
+              code: `${fullscreenQuadWGSL}
+
+                @group(0) @binding(0) var outputTex: texture_storage_2d<rgba8unorm, write>;
+
+                @fragment fn frag_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
+                  textureStore(outputTex, vec2<i32>(fragCoord.xy), ${storedValue});
+                  return vec4<f32>();
+                }
+              `,
+            });
+
+            const renderPipeline = this.device.createRenderPipeline({
+              layout: this.device.createPipelineLayout({
+                bindGroupLayouts: [bindGroupLayout],
+              }),
+
+              vertex: {
+                module,
+                entryPoint: 'vert_main',
+              },
+
+              fragment: {
+                module,
+                entryPoint: 'frag_main',
+
+                // Unused attachment since we can't use textureStore in the vertex shader.
+                // Set writeMask to zero.
+                targets: [
+                  {
+                    format: this.kTextureFormat,
+                    writeMask: 0,
+                  },
+                ],
+              },
+            });
+
+            switch (context) {
+              case 'render-bundle-encoder':
+                assert(this.renderBundleEncoder !== undefined);
+                this.renderBundleEncoder.setPipeline(renderPipeline);
+                this.renderBundleEncoder.setBindGroup(0, bindGroup);
+                this.renderBundleEncoder.draw(6);
+                break;
+              case 'render-pass-encoder':
+                assert(this.renderPassEncoder !== undefined);
+                this.renderPassEncoder.setPipeline(renderPipeline);
+                this.renderPassEncoder.setBindGroup(0, bindGroup);
+                this.renderPassEncoder.draw(6);
+                break;
+            }
+
+            break;
+          }
+          case 'compute-pass-encoder': {
+            const module = this.device.createShaderModule({
+              code: `
+                @group(0) @binding(0) var outputTex: texture_storage_2d<rgba8unorm, write>;
+
+                @compute @workgroup_size(8, 8)
+                fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
+                  if (any(gid.xy >= vec2<u32>(textureDimensions(outputTex)))) {
+                    return;
+                  }
+                  let coord = vec2<i32>(gid.xy);
+                  textureStore(outputTex, coord, ${storedValue});
+                }
+              `,
+            });
+
+            const computePipeline = this.device.createComputePipeline({
+              layout: this.device.createPipelineLayout({
+                bindGroupLayouts: [bindGroupLayout],
+              }),
+
+              compute: {
+                module,
+                entryPoint: 'main',
+              },
+            });
+
+            assert(this.computePassEncoder !== undefined);
+            this.computePassEncoder.setPipeline(computePipeline);
+            this.computePassEncoder.setBindGroup(0, bindGroup);
+            this.computePassEncoder.dispatchWorkgroups(
+              Math.ceil(this.kTextureSize[0] / 8),
+              Math.ceil(this.kTextureSize[1] / 8)
+            );
+
+            break;
+          }
+          default:
+            unreachable();
+        }
+
+        break;
+      }
       case 't2b-copy':
       case 'sample':
         unreachable();
-    }
-  }
-
-  // Ensure that all encoded commands are finished and subitted.
-  ensureSubmit() {
-    this.ensureContext('queue');
-    this.flushEncodedCommands();
-  }
-
-  popContext() {
-    switch (this.currentContext) {
-      case 'queue':
-        unreachable();
-        break;
-      case 'command-encoder': {
-        assert(this.commandEncoder !== undefined);
-        const commandBuffer = this.commandEncoder.finish();
-        this.commandEncoder = undefined;
-        this.currentContext = 'queue';
-        return commandBuffer;
-      }
-      case 'compute-pass-encoder':
-        assert(this.computePassEncoder !== undefined);
-        this.computePassEncoder.endPass();
-        this.computePassEncoder = undefined;
-        this.currentContext = 'command-encoder';
-        break;
-      case 'render-pass-encoder':
-        assert(this.renderPassEncoder !== undefined);
-        this.renderPassEncoder.endPass();
-        this.renderPassEncoder = undefined;
-        this.currentContext = 'command-encoder';
-        break;
-      case 'render-bundle-encoder': {
-        assert(this.renderBundleEncoder !== undefined);
-        const renderBundle = this.renderBundleEncoder.finish();
-        this.renderBundleEncoder = undefined;
-        this.currentContext = 'render-pass-encoder';
-        return renderBundle;
-      }
-    }
-
-    return null;
-  }
-
-  makeDummyAttachment() {
-    const texture = this.t.trackForCleanup(
-      this.device.createTexture({
-        format: this.kTextureFormat,
-        size: this.kTextureSize,
-        usage: GPUTextureUsage.RENDER_ATTACHMENT,
-      })
-    );
-
-    return {
-      view: texture.createView(),
-      loadValue: 'load',
-      storeOp: 'store',
-    };
-  }
-
-  ensureContext(context) {
-    // Find the common ancestor. So we can transition from currentContext -> context.
-    const ancestorContext =
-      kOperationContexts[
-        Math.min(
-          kOperationContexts.indexOf(context),
-          kOperationContexts.indexOf(this.currentContext)
-        )
-      ];
-
-    // Pop the context until we're at the common ancestor.
-    while (this.currentContext !== ancestorContext) {
-      // About to pop the render pass encoder. Execute any outstanding render bundles.
-      if (this.currentContext === 'render-pass-encoder') {
-        this.flushEncodedCommands();
-      }
-
-      const result = this.popContext();
-      if (result) {
-        if (result instanceof GPURenderBundle) {
-          assert(
-            this.encodedCommands.length === 0 || this.encodedCommands[0] instanceof GPURenderBundle
-          );
-
-          this.encodedCommands.push(result);
-        } else {
-          assert(
-            this.encodedCommands.length === 0 || this.encodedCommands[0] instanceof GPUCommandBuffer
-          );
-
-          this.encodedCommands.push(result);
-        }
-      }
-    }
-
-    if (this.currentContext === context) {
-      return;
-    }
-
-    switch (context) {
-      case 'queue':
-        unreachable();
-        break;
-      case 'command-encoder':
-        assert(this.currentContext === 'queue');
-        this.commandEncoder = this.device.createCommandEncoder();
-        break;
-      case 'compute-pass-encoder':
-        switch (this.currentContext) {
-          case 'queue':
-            this.commandEncoder = this.device.createCommandEncoder();
-          // fallthrough
-          case 'command-encoder':
-            assert(this.commandEncoder !== undefined);
-            this.computePassEncoder = this.commandEncoder.beginComputePass();
-            break;
-          case 'compute-pass-encoder':
-          case 'render-bundle-encoder':
-          case 'render-pass-encoder':
-            unreachable();
-        }
-
-        break;
-      case 'render-pass-encoder':
-        switch (this.currentContext) {
-          case 'queue':
-            this.commandEncoder = this.device.createCommandEncoder();
-          // fallthrough
-          case 'command-encoder':
-            assert(this.commandEncoder !== undefined);
-            this.renderPassEncoder = this.commandEncoder.beginRenderPass({
-              colorAttachments: [this.makeDummyAttachment()],
-            });
-
-            break;
-          case 'render-pass-encoder':
-          case 'render-bundle-encoder':
-          case 'compute-pass-encoder':
-            unreachable();
-        }
-
-        break;
-      case 'render-bundle-encoder':
-        switch (this.currentContext) {
-          case 'queue':
-            this.commandEncoder = this.device.createCommandEncoder();
-          // fallthrough
-          case 'command-encoder':
-            assert(this.commandEncoder !== undefined);
-            this.renderPassEncoder = this.commandEncoder.beginRenderPass({
-              colorAttachments: [this.makeDummyAttachment()],
-            });
-
-          // fallthrough
-          case 'render-pass-encoder':
-            this.renderBundleEncoder = this.device.createRenderBundleEncoder({
-              colorFormats: [this.kTextureFormat],
-            });
-
-            break;
-          case 'render-bundle-encoder':
-          case 'compute-pass-encoder':
-            unreachable();
-        }
-
-        break;
-    }
-
-    this.currentContext = context;
-  }
-
-  /**
-   * Execute/submit encoded GPURenderBundles or GPUCommandBuffers.
-   */
-  flushEncodedCommands() {
-    if (this.encodedCommands.length > 0) {
-      if (this.encodedCommands[0] instanceof GPURenderBundle) {
-        assert(this.renderPassEncoder !== undefined);
-        this.renderPassEncoder.executeBundles(this.encodedCommands);
-      } else {
-        this.queue.submit(this.encodedCommands);
-      }
-    }
-    this.encodedCommands = [];
-  }
-
-  ensureBoundary(boundary) {
-    switch (boundary) {
-      case 'command-buffer':
-        this.ensureContext('queue');
-        break;
-      case 'queue-op':
-        this.ensureContext('queue');
-        // Submit any GPUCommandBuffers so the next one is in a separate submit.
-        this.flushEncodedCommands();
-        break;
-      case 'dispatch':
-        // Nothing to do to separate dispatches.
-        assert(this.currentContext === 'compute-pass-encoder');
-        break;
-      case 'draw':
-        // Nothing to do to separate draws.
-        assert(
-          this.currentContext === 'render-pass-encoder' ||
-            this.currentContext === 'render-bundle-encoder'
-        );
-
-        break;
-      case 'pass':
-        this.ensureContext('command-encoder');
-        break;
-      case 'render-bundle':
-        this.ensureContext('render-pass-encoder');
-        break;
-      case 'execute-bundles':
-        this.ensureContext('render-pass-encoder');
-        // Execute any GPURenderBundles so the next one is in a separate executeBundles.
-        this.flushEncodedCommands();
-        break;
     }
   }
 }
@@ -535,7 +623,6 @@ g.test('wr')
     Test that the results are synchronized.
     The read should see exactly the contents written by the previous write.
 
-    - TODO: Finish implementation [1]
     - TODO: Use non-solid-color texture contents [2]`
   )
   .params(u =>

@@ -63,11 +63,11 @@ g.test('inputs')
         break;
       case 'struct':
         structures = `struct Inputs {
-            @builtin(local_invocation_id) local_id : vec3<u32>;
-            @builtin(local_invocation_index) local_index : u32;
-            @builtin(global_invocation_id) global_id : vec3<u32>;
-            @builtin(workgroup_id) group_id : vec3<u32>;
-            @builtin(num_workgroups) num_groups : vec3<u32>;
+            @builtin(local_invocation_id) local_id : vec3<u32>,
+            @builtin(local_invocation_index) local_index : u32,
+            @builtin(global_invocation_id) global_id : vec3<u32>,
+            @builtin(workgroup_id) group_id : vec3<u32>,
+            @builtin(num_workgroups) num_groups : vec3<u32>,
           };`;
         params = `inputs : Inputs`;
         local_id = 'inputs.local_id';
@@ -78,11 +78,11 @@ g.test('inputs')
         break;
       case 'mixed':
         structures = `struct InputsA {
-          @builtin(local_invocation_index) local_index : u32;
-          @builtin(global_invocation_id) global_id : vec3<u32>;
+          @builtin(local_invocation_index) local_index : u32,
+          @builtin(global_invocation_id) global_id : vec3<u32>,
         };
         struct InputsB {
-          @builtin(workgroup_id) group_id : vec3<u32>;
+          @builtin(workgroup_id) group_id : vec3<u32>
         };`;
         params = `@builtin(local_invocation_id) local_id : vec3<u32>,
                   inputsA : InputsA,
@@ -99,10 +99,10 @@ g.test('inputs')
     // WGSL shader that stores every builtin value to a buffer, for every invocation in the grid.
     const wgsl = `
       struct S {
-        data : array<u32>;
+        data : array<u32>
       };
       struct V {
-        data : array<vec3<u32>>;
+        data : array<vec3<u32>>
       };
       @group(0) @binding(0) var<storage, write> local_id_out : V;
       @group(0) @binding(1) var<storage, write> local_index_out : S;
@@ -116,7 +116,7 @@ g.test('inputs')
       let group_height = ${t.params.groupSize.y}u;
       let group_depth = ${t.params.groupSize.z}u;
 
-      @stage(compute) @workgroup_size(group_width, group_height, group_depth)
+      @compute @workgroup_size(group_width, group_height, group_depth)
       fn main(
         ${params}
         ) {
@@ -131,6 +131,7 @@ g.test('inputs')
     `;
 
     const pipeline = t.device.createComputePipeline({
+      layout: 'auto',
       compute: {
         module: t.device.createShaderModule({
           code: wgsl,
@@ -177,7 +178,7 @@ g.test('inputs')
     pass.setBindGroup(0, bindGroup);
     switch (t.params.dispatch) {
       case 'direct':
-        pass.dispatch(t.params.numGroups.x, t.params.numGroups.y, t.params.numGroups.z);
+        pass.dispatchWorkgroups(t.params.numGroups.x, t.params.numGroups.y, t.params.numGroups.z);
         break;
       case 'indirect': {
         const dispatchBuffer = t.device.createBuffer({
@@ -191,11 +192,11 @@ g.test('inputs')
         dispatchData[1] = t.params.numGroups.y;
         dispatchData[2] = t.params.numGroups.z;
         dispatchBuffer.unmap();
-        pass.dispatchIndirect(dispatchBuffer, 0);
+        pass.dispatchWorkgroupsIndirect(dispatchBuffer, 0);
         break;
       }
     }
-    pass.endPass();
+    pass.end();
     t.queue.submit([encoder.finish()]);
 
     type vec3 = { x: number; y: number; z: number };

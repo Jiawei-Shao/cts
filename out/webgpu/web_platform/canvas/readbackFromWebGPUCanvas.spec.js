@@ -8,7 +8,7 @@ import { kCanvasTextureFormats } from '../../capability_info.js';
 import { GPUTest } from '../../gpu_test.js';
 import { checkElementsEqual } from '../../util/check_contents.js';
 import {
-allCanvasTypes,
+kAllCanvasTypes,
 
 createCanvas,
 createOnscreenCanvas } from
@@ -63,9 +63,11 @@ canvasType)
 
   const clearOnePixel = (origin, color) => {
     const pass = encoder.beginRenderPass({
-      colorAttachments: [{ view: tempTextureView, loadValue: color, storeOp: 'store' }] });
+      colorAttachments: [
+      { view: tempTextureView, clearValue: color, loadOp: 'clear', storeOp: 'store' }] });
 
-    pass.endPass();
+
+    pass.end();
     encoder.copyTextureToTexture(
     { texture: tempTexture },
     { texture: canvasTexture, origin },
@@ -118,7 +120,7 @@ u //
 .combine('format', kCanvasTextureFormats).
 combine('snapshotType', ['toDataURL', 'toBlob', 'imageBitmap'])).
 
-fn(async t => {
+fn(async (t) => {
   const canvas = await initCanvasContent(t, t.params.format, 'onscreen');
 
   let snapshot;
@@ -132,10 +134,10 @@ fn(async t => {
         break;
       }
     case 'toBlob':{
-        const blobFromCanvs = new Promise(resolve => {
-          canvas.toBlob(blob => resolve(blob));
+        const blobFromCanvas = new Promise((resolve) => {
+          canvas.toBlob((blob) => resolve(blob));
         });
-        const blob = await blobFromCanvs;
+        const blob = await blobFromCanvas;
         const url = URL.createObjectURL(blob);
         const img = new Image(canvas.width, canvas.height);
         img.src = url;
@@ -168,7 +170,7 @@ u //
 .combine('format', kCanvasTextureFormats).
 combine('snapshotType', ['convertToBlob', 'transferToImageBitmap', 'imageBitmap'])).
 
-fn(async t => {
+fn(async (t) => {
   const offscreenCanvas = await initCanvasContent(
   t,
   t.params.format,
@@ -221,7 +223,7 @@ u //
 combine('webgl', ['webgl', 'webgl2']).
 combine('upload', ['texImage2D', 'texSubImage2D'])).
 
-fn(async t => {
+fn(async (t) => {
   const { format, webgl, upload } = t.params;
   const canvas = await initCanvasContent(t, format, 'onscreen');
 
@@ -278,10 +280,10 @@ desc(
 params((u) =>
 u //
 .combine('format', kCanvasTextureFormats).
-combine('webgpuCanvasType', allCanvasTypes).
-combine('canvas2DType', allCanvasTypes)).
+combine('webgpuCanvasType', kAllCanvasTypes).
+combine('canvas2DType', kAllCanvasTypes)).
 
-fn(async t => {
+fn(async (t) => {
   const { format, webgpuCanvasType, canvas2DType } = t.params;
 
   const canvas = await initCanvasContent(t, format, webgpuCanvasType);

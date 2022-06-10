@@ -50,13 +50,15 @@ export type MemoryModelTestParams = {
   memStride: number;
   /** For tests that access one memory location, but use dynamic addresses to avoid compiler optimization, aliased memory should be set to true. */
   aliasedMemory: boolean;
-  /** The number of memory locations accessed by this test. */
-  numMemLocations: number;
-  /** The number of read outputs per test that need to be analyzed in the result aggregation shader. */
-  numReadOutputs: number;
   /** The number of possible behaviors that a test can have. */
   numBehaviors: number;
 };
+
+/** The number of memory locations accessed by a test. Currently, only tests with up to 2 memory locations are supported. */
+const numMemLocations = 2;
+
+/** The number of read outputs per test that need to be analyzed in the result aggregation shader. Currently, only tests with up to 2 read outputs are supported. */
+const numReadOutputs = 2;
 
 /** Represents a device buffer and a utility buffer for resetting memory and copying parameters. */
 type BufferWithSource = {
@@ -135,7 +137,7 @@ export class MemoryModelTester {
     // set up buffers
     const testingThreads = this.params.workgroupSize * this.params.testingWorkgroups;
     const testLocationsSize =
-      testingThreads * this.params.numMemLocations * this.params.memStride * bytesPerWord;
+      testingThreads * numMemLocations * this.params.memStride * bytesPerWord;
     const testLocationsBuffer: BufferWithSource = {
       deviceBuf: this.test.device.createBuffer({
         size: testLocationsSize,
@@ -148,7 +150,7 @@ export class MemoryModelTester {
       size: testLocationsSize,
     };
 
-    const readResultsSize = testingThreads * this.params.numReadOutputs * bytesPerWord;
+    const readResultsSize = testingThreads * numReadOutputs * bytesPerWord;
     const readResultsBuffer: BufferWithSource = {
       deviceBuf: this.test.device.createBuffer({
         size: readResultsSize,
@@ -318,7 +320,9 @@ export class MemoryModelTester {
 
   /**
    * Run the test for the specified number of iterations. Checks the testResults buffer on the weakIndex; if
-   * this value is not 0 then the test has failed.
+   * this value is not 0 then the test has failed. The number of iterations is chosen per test so that the
+   * full set of tests meets some time budget while still being reasonably effective at uncovering issues.
+   * Currently, we aim for each test to complete in under one second.
    */
   async run(iterations: number, weakIndex: number): Promise<void> {
     for (let i = 0; i < iterations; i++) {
@@ -342,14 +346,14 @@ export class MemoryModelTester {
       const testPass = encoder.beginComputePass();
       testPass.setPipeline(this.testPipeline);
       testPass.setBindGroup(0, this.testBindGroup);
-      testPass.dispatch(numWorkgroups);
-      testPass.endPass();
+      testPass.dispatchWorkgroups(numWorkgroups);
+      testPass.end();
 
       const resultPass = encoder.beginComputePass();
       resultPass.setPipeline(this.resultPipeline);
       resultPass.setBindGroup(0, this.resultBindGroup);
-      resultPass.dispatch(this.params.testingWorkgroups);
-      resultPass.endPass();
+      resultPass.dispatchWorkgroups(this.params.testingWorkgroups);
+      resultPass.end();
 
       this.test.device.queue.submit([encoder.finish()]);
       this.test.expectGPUBufferValuesPassCheck(
@@ -554,35 +558,35 @@ export class MemoryModelTester {
 /** Defines common data structures used in memory model test shaders. */
 const shaderMemStructures = `
   struct Memory {
-    value: array<u32>;
+    value: array<u32>
   };
-    
+
   struct AtomicMemory {
-    value: array<atomic<u32>>;
+    value: array<atomic<u32>>
   };
-    
+
   struct ReadResult {
-    r0: atomic<u32>;
-    r1: atomic<u32>;
+    r0: atomic<u32>,
+    r1: atomic<u32>,
   };
-    
+
   struct ReadResults {
-    value: array<ReadResult>;
+    value: array<ReadResult>
   };
-    
+
   struct StressParamsMemory {
-    do_barrier: u32;
-    mem_stress: u32;
-    mem_stress_iterations: u32;
-    mem_stress_pattern: u32;
-    pre_stress: u32;
-    pre_stress_iterations: u32;
-    pre_stress_pattern: u32;
-    permute_first: u32;
-    permute_second: u32;
-    testing_workgroups: u32;
-    mem_stride: u32;
-    location_offset: u32;
+    do_barrier: u32,
+    mem_stress: u32,
+    mem_stress_iterations: u32,
+    mem_stress_pattern: u32,
+    pre_stress: u32,
+    pre_stress_iterations: u32,
+    pre_stress_pattern: u32,
+    permute_first: u32,
+    permute_second: u32,
+    testing_workgroups: u32,
+    mem_stride: u32,
+    location_offset: u32,
   };
 `;
 
@@ -595,10 +599,10 @@ const shaderMemStructures = `
  */
 const fourBehaviorTestResultStructure = `
   struct TestResults {
-    seq0: atomic<u32>;
-    seq1: atomic<u32>;
-    interleaved: atomic<u32>;
-    weak: atomic<u32>;
+    seq0: atomic<u32>,
+    seq1: atomic<u32>,
+    interleaved: atomic<u32>,
+    weak: atomic<u32>,
   };
 `;
 
@@ -610,14 +614,13 @@ const fourBehaviorTestResultStructure = `
  */
 const twoBehaviorTestResultStructure = `
   struct TestResults {
-    seq: atomic<u32>;
-    weak: atomic<u32>;
+    seq: atomic<u32>,
+    weak: atomic<u32>,
   };
 `;
 
-/** Bindings used in the test shader phase of a test. */
-const testShaderBindings = `
-  @group(0) @binding(0) var<storage, read_write> test_locations : AtomicMemory;
+/** Common bindings used in the test shader phase of a test. */
+const commonTestShaderBindings = `
   @group(0) @binding(1) var<storage, read_write> results : ReadResults;
   @group(0) @binding(2) var<storage, read> shuffled_workgroups : Memory;
   @group(0) @binding(3) var<storage, read_write> barrier : AtomicMemory;
@@ -625,6 +628,22 @@ const testShaderBindings = `
   @group(0) @binding(5) var<storage, read_write> scratch_locations : Memory;
   @group(0) @binding(6) var<uniform> stress_params : StressParamsMemory;
 `;
+
+/** The combined bindings for a test on atomic memory. */
+const atomicTestShaderBindings = [
+  `
+  @group(0) @binding(0) var<storage, read_write> test_locations : AtomicMemory;
+`,
+  commonTestShaderBindings,
+].join('\n');
+
+/** The combined bindings for a test on non-atomic memory. */
+const nonAtomicTestShaderBindings = [
+  `
+  @group(0) @binding(0) var<storage, read_write> test_locations : Memory;
+`,
+  commonTestShaderBindings,
+].join('\n');
 
 /** Bindings used in the result aggregation phase of the test. */
 const resultShaderBindings = `
@@ -636,7 +655,7 @@ const resultShaderBindings = `
 
 /**
  * For tests that operate on workgroup memory, include this definition. 3584 memory locations is
- * large enough to accomodate the maximum memory size needed per workgroup for testing, which is
+ * large enough to accommodate the maximum memory size needed per workgroup for testing, which is
  * 256 invocations per workgroup x 2 memory locations x 7 (memStride, or max stride between successive memory locations).
  * Should change to a pipeline overridable constant when possible.
  */
@@ -646,7 +665,7 @@ const atomicWorkgroupMemory = `
 
 /**
  * For tests that operate on non-atomic workgroup memory, include this definition. 3584 memory locations
- * is large enough to accomodate the maximum memory size needed per workgroup for testing.
+ * is large enough to accommodate the maximum memory size needed per workgroup for testing.
  */
 const nonAtomicWorkgroupMemory = `
   var<workgroup> wg_test_locations: array<u32, 3584>;
@@ -661,7 +680,7 @@ const memoryLocationFunctions = `
   fn permute_id(id: u32, factor: u32, mask: u32) -> u32 {
     return (id * factor) % mask;
   }
-    
+
   fn stripe_workgroup(workgroup_id: u32, local_id: u32) -> u32 {
     return (workgroup_id + 1u + local_id % (stress_params.testing_workgroups - 1u)) % stress_params.testing_workgroups;
   }
@@ -684,7 +703,7 @@ const testShaderFunctions = `
       i = i + 1u;
     }
   }
-    
+
   // Perform iterations of stress, depending on the specified pattern. Pattern 0 is store-store, pattern 1 is store-load,
   // pattern 2 is load-store, and pattern 3 is load-load. The extra if condition (if tmpX > 100000u), is used to avoid
   // the compiler optimizing out unused loads, where 100,000 is larger than the maximum number of stress iterations used
@@ -740,12 +759,12 @@ const testShaderFunctions = `
 
 /**
  * Entry point to both test and result shaders. One-dimensional workgroup size is hardcoded to 256, until
- * pipeline overrideable constants are supported.
+ * pipeline overridable constants are supported.
  */
 const shaderEntryPoint = `
   // Change to pipeline overridable constant when possible.
   let workgroupXSize = 256u;
-  @stage(compute) @workgroup_size(workgroupXSize) fn main(
+  @compute @workgroup_size(workgroupXSize) fn main(
     @builtin(local_invocation_id) local_invocation_id : vec3<u32>,
     @builtin(workgroup_id) workgroup_id : vec3<u32>) {
 `;
@@ -756,6 +775,77 @@ const testShaderCommonHeader = `
     if (shuffled_workgroup < stress_params.testing_workgroups) {
 `;
 
+/**
+ * All test shaders must calculate addresses for memory locations used in the test. Not all these addresses are
+ * used in every test, but no test uses more than these addresses.
+ */
+const testShaderCommonCalculations = `
+  let x_0 = id_0 * stress_params.mem_stride * 2u;
+  let y_0 = permute_id(id_0, stress_params.permute_second, total_ids) * stress_params.mem_stride * 2u + stress_params.location_offset;
+  let x_1 = id_1 * stress_params.mem_stride * 2u;
+  let y_1 = permute_id(id_1, stress_params.permute_second, total_ids) * stress_params.mem_stride * 2u + stress_params.location_offset;
+  if (stress_params.pre_stress == 1u) {
+    do_stress(stress_params.pre_stress_iterations, stress_params.pre_stress_pattern, shuffled_workgroup);
+  }
+`;
+
+/**
+ * An inter-workgroup test calculates two sets of memory locations that are guaranteed to be in separate workgroups.
+ * If the bounded spin-loop barrier is called, it attempts to wait for all invocations in all workgroups.
+ */
+const interWorkgroupTestShaderCode = [
+  `
+  let total_ids = workgroupXSize * stress_params.testing_workgroups;
+  let id_0 = shuffled_workgroup * workgroupXSize + local_invocation_id[0];
+  let new_workgroup = stripe_workgroup(shuffled_workgroup, local_invocation_id[0]);
+  let id_1 = new_workgroup * workgroupXSize + permute_id(local_invocation_id[0], stress_params.permute_first, workgroupXSize);
+`,
+  testShaderCommonCalculations,
+  `
+  if (stress_params.do_barrier == 1u) {
+    spin(workgroupXSize * stress_params.testing_workgroups);
+  }
+`,
+].join('\n');
+
+/**
+ * An intra-workgroup test calculates two set of memory locations that are guaranteed to be in the same workgroup.
+ * If the bounded spin-loop barrier is called, it attempts to wait for all invocations in the same workgroup.
+ */
+const intraWorkgroupTestShaderCode = [
+  `
+  let total_ids = workgroupXSize;
+  let id_0 = local_invocation_id[0];
+  let id_1 = permute_id(local_invocation_id[0], stress_params.permute_first, workgroupXSize);
+`,
+  testShaderCommonCalculations,
+  `
+  if (stress_params.do_barrier == 1u) {
+    spin(workgroupXSize);
+  }
+`,
+].join('\n');
+
+/**
+ * Tests that operate on storage memory and communicate with invocations in the same workgroup must offset their locations
+ * relative to global memory.
+ */
+const storageIntraWorkgroupTestShaderCode = `
+  let total_ids = workgroupXSize;
+  let id_0 = local_invocation_id[0];
+  let id_1 = permute_id(local_invocation_id[0], stress_params.permute_first, workgroupXSize);
+  let x_0 = (shuffled_workgroup * workgroupXSize + id_0) * stress_params.mem_stride * 2u;
+  let y_0 = (shuffled_workgroup * workgroupXSize + permute_id(id_0, stress_params.permute_second, total_ids)) * stress_params.mem_stride * 2u + stress_params.location_offset;
+  let x_1 = (shuffled_workgroup * workgroupXSize + id_1) * stress_params.mem_stride * 2u;
+  let y_1 = (shuffled_workgroup * workgroupXSize + permute_id(id_1, stress_params.permute_second, total_ids)) * stress_params.mem_stride * 2u + stress_params.location_offset;
+  if (stress_params.pre_stress == 1u) {
+    do_stress(stress_params.pre_stress_iterations, stress_params.pre_stress_pattern, shuffled_workgroup);
+  }
+  if (stress_params.do_barrier == 1u) {
+    spin(workgroupXSize);
+  }
+`;
+
 /** All test shaders may perform stress with non-testing threads. */
 const testShaderCommonFooter = `
     } else if (stress_params.mem_stress == 1u) {
@@ -764,40 +854,85 @@ const testShaderCommonFooter = `
   }
 `;
 
+/**
+ * All result shaders must calculate memory locations used in the test. Not all these locations are
+ * used in every result shader, but no result shader uses more than these locations.
+ */
+const resultShaderCommonCalculations = `
+  let id_0 = workgroup_id[0] * workgroupXSize + local_invocation_id[0];
+  let x_0 = id_0 * stress_params.mem_stride * 2u;
+  let mem_x_0 = atomicLoad(&test_locations.value[x_0]);
+  let r0 = atomicLoad(&read_results.value[id_0].r0);
+  let r1 = atomicLoad(&read_results.value[id_0].r1);
+`;
+
+/** Common result shader code for an inter-workgroup test. */
+const interWorkgroupResultShaderCode = [
+  resultShaderCommonCalculations,
+  `
+  let total_ids = workgroupXSize * stress_params.testing_workgroups;
+  let y_0 = permute_id(id_0, stress_params.permute_second, total_ids) * stress_params.mem_stride * 2u + stress_params.location_offset;
+  let mem_y_0 = atomicLoad(&test_locations.value[y_0]);
+`,
+].join('\n');
+
+/** Common result shader code for an intra-workgroup test. */
+const intraWorkgroupResultShaderCode = [
+  resultShaderCommonCalculations,
+  `
+  let total_ids = workgroupXSize;
+  let y_0 = (workgroup_id[0] * workgroupXSize + permute_id(local_invocation_id[0], stress_params.permute_second, total_ids)) * stress_params.mem_stride * 2u + stress_params.location_offset;
+  let mem_y_0 = atomicLoad(&test_locations.value[y_0]);
+`,
+].join('\n');
+
 /** Ending bracket for result shaders. */
 const resultShaderCommonFooter = `
 }
 `;
 
-/** The common shader code for test shaders that perform inter-workgroup litmus tests. */
-const interWorkgroupTestShaderCommonCode = [
+/** The common shader code for test shaders that perform atomic storage class memory litmus tests. */
+const storageMemoryAtomicTestShaderCode = [
   shaderMemStructures,
-  testShaderBindings,
+  atomicTestShaderBindings,
   memoryLocationFunctions,
   testShaderFunctions,
   shaderEntryPoint,
   testShaderCommonHeader,
 ].join('\n');
-/** The common shader code for test shaders that perform atomic intra-workgroup litmus tests. */
-const intraWorkgroupAtomicTestShaderCommonCode = [
+
+/** The common shader code for test shaders that perform non-atomic storage class memory litmus tests. */
+const storageMemoryNonAtomicTestShaderCode = [
   shaderMemStructures,
-  testShaderBindings,
+  nonAtomicTestShaderBindings,
+  memoryLocationFunctions,
+  testShaderFunctions,
+  shaderEntryPoint,
+  testShaderCommonHeader,
+].join('\n');
+
+/** The common shader code for test shaders that perform atomic workgroup class memory litmus tests. */
+const workgroupMemoryAtomicTestShaderCode = [
+  shaderMemStructures,
+  atomicTestShaderBindings,
   atomicWorkgroupMemory,
   memoryLocationFunctions,
   testShaderFunctions,
   shaderEntryPoint,
   testShaderCommonHeader,
 ].join('\n');
-/** The common shader code for test shaders that perform non-atomic intra-workgroup litmus tests. */
-const intraWorkgroupNonAtomicTestShaderCommonCode = [
+
+/** The common shader code for test shaders that perform non-atomic workgroup class memory litmus tests. */
+const workgroupMemoryNonAtomicTestShaderCode = [
   shaderMemStructures,
-  testShaderBindings,
+  nonAtomicTestShaderBindings,
   nonAtomicWorkgroupMemory,
   memoryLocationFunctions,
   testShaderFunctions,
   shaderEntryPoint,
   testShaderCommonHeader,
 ].join('\n');
+
 /** The common shader code for all result shaders. */
 const resultShaderCommonCode = [
   shaderMemStructures,
@@ -806,40 +941,108 @@ const resultShaderCommonCode = [
   shaderEntryPoint,
 ].join('\n');
 
-/** Given test code for an inter-workgroup test, returns a combined shader. */
-export function buildInterWorkgroupTestShader(testCode: string): string {
-  return [interWorkgroupTestShaderCommonCode, testCode, testShaderCommonFooter].join('\n');
+/**
+ * Defines the types of possible memory a test is operating on. Used as part of the process of building shader code from
+ * its composite parts.
+ */
+export enum MemoryType {
+  /** Atomic memory in the storage address space. */
+  AtomicStorageClass = 'atomic_storage',
+  /** Non-atomic memory in the storage address space. */
+  NonAtomicStorageClass = 'non_atomic_storage',
+  /** Atomic memory in the workgroup address space. */
+  AtomicWorkgroupClass = 'atomic_workgroup',
+  /** Non-atomic memory in the workgroup address space. */
+  NonAtomicWorkgroupClass = 'non_atomic_workgroup',
 }
 
-/** Given test code for an intra-workgroup test, returns a combined shader. */
-export function buildIntraWorkgroupTestShader(
+/**
+ * Defines the relative positions of two invocations coordinating on a test. Used as part of the process of building shader
+ * code from its composite parts.
+ */
+export enum TestType {
+  /** A test consists of two invocations in different workgroups. */
+  InterWorkgroup = 'inter_workgroup',
+  /** A test consists of two invocations in the same workgroup. */
+  IntraWorkgroup = 'intra_workgroup',
+}
+
+/** Defines the number of behaviors a test may have. */
+export enum ResultType {
+  TwoBehavior,
+  FourBehavior,
+}
+
+/**
+ * Given test code that performs the actual sequence of loads and stores, as well as a memory type and test type, returns
+ * a complete test shader.
+ */
+export function buildTestShader(
   testCode: string,
-  atomicMemory: boolean = true
+  memoryType: MemoryType,
+  testType: TestType
 ): string {
-  let commonCode;
-  if (atomicMemory) {
-    commonCode = intraWorkgroupAtomicTestShaderCommonCode;
-  } else {
-    commonCode = intraWorkgroupNonAtomicTestShaderCommonCode;
+  let memoryTypeCode;
+  let isStorageAS = false;
+  switch (memoryType) {
+    case MemoryType.AtomicStorageClass:
+      memoryTypeCode = storageMemoryAtomicTestShaderCode;
+      isStorageAS = true;
+      break;
+    case MemoryType.NonAtomicStorageClass:
+      memoryTypeCode = storageMemoryNonAtomicTestShaderCode;
+      isStorageAS = true;
+      break;
+    case MemoryType.AtomicWorkgroupClass:
+      memoryTypeCode = workgroupMemoryAtomicTestShaderCode;
+      break;
+    case MemoryType.NonAtomicWorkgroupClass:
+      memoryTypeCode = workgroupMemoryNonAtomicTestShaderCode;
   }
-  return [commonCode, testCode, testShaderCommonFooter].join('\n');
+  let testTypeCode;
+  switch (testType) {
+    case TestType.InterWorkgroup:
+      testTypeCode = interWorkgroupTestShaderCode;
+      break;
+    case TestType.IntraWorkgroup:
+      if (isStorageAS) {
+        testTypeCode = storageIntraWorkgroupTestShaderCode;
+      } else {
+        testTypeCode = intraWorkgroupTestShaderCode;
+      }
+  }
+  return [memoryTypeCode, testTypeCode, testCode, testShaderCommonFooter].join('\n');
 }
 
-/** Given result code for a four behavior test, returns a combined result shader. */
-export function buildFourResultShader(resultCode: string): string {
+/**
+ * Given result code that aggregates the possible behaviors of a test across all instances, as well as a test type and
+ * number of behaviors, returns a complete result shader.
+ */
+export function buildResultShader(
+  resultCode: string,
+  testType: TestType,
+  resultType: ResultType
+): string {
+  let resultStructure;
+  switch (resultType) {
+    case ResultType.TwoBehavior:
+      resultStructure = twoBehaviorTestResultStructure;
+      break;
+    case ResultType.FourBehavior:
+      resultStructure = fourBehaviorTestResultStructure;
+  }
+  let testTypeCode;
+  switch (testType) {
+    case TestType.InterWorkgroup:
+      testTypeCode = interWorkgroupResultShaderCode;
+      break;
+    case TestType.IntraWorkgroup:
+      testTypeCode = intraWorkgroupResultShaderCode;
+  }
   return [
-    fourBehaviorTestResultStructure,
+    resultStructure,
     resultShaderCommonCode,
-    resultCode,
-    resultShaderCommonFooter,
-  ].join('\n');
-}
-
-/** Given result code for a two behavior test, returns a combined result shader. */
-export function buildTwoResultShader(resultCode: string): string {
-  return [
-    twoBehaviorTestResultStructure,
-    resultShaderCommonCode,
+    testTypeCode,
     resultCode,
     resultShaderCommonFooter,
   ].join('\n');

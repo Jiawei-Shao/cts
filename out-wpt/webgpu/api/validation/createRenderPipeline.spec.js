@@ -25,7 +25,7 @@ TODO: review existing tests, write descriptions, and make sure tests are complet
 
 `;
 import { makeTestGroup } from '../../../common/framework/test_group.js';
-import { unreachable } from '../../../common/util/util.js';
+import { assert, unreachable } from '../../../common/util/util.js';
 import {
   kTextureFormats,
   kRenderableColorTextureFormats,
@@ -36,60 +36,13 @@ import {
   kBlendFactors,
   kBlendOperations,
 } from '../../capability_info.js';
+import { getFragmentShaderCodeWithOutput, getPlainTypeInfo } from '../../util/shader.js';
 import { kTexelRepresentationInfo } from '../../util/texture/texel_data.js';
 
 import { ValidationTest } from './validation_test.js';
 
+const values = [0, 1, 0, 1];
 class F extends ValidationTest {
-  getFragmentShaderCode(sampleType, componentCount) {
-    const v = ['0', '1', '0', '1'];
-
-    let fragColorType;
-    let suffix;
-    switch (sampleType) {
-      case 'sint':
-        fragColorType = 'i32';
-        suffix = '';
-        break;
-      case 'uint':
-        fragColorType = 'u32';
-        suffix = 'u';
-        break;
-      default:
-        fragColorType = 'f32';
-        suffix = '.0';
-        break;
-    }
-
-    let outputType;
-    let result;
-    switch (componentCount) {
-      case 1:
-        outputType = fragColorType;
-        result = `${v[0]}${suffix}`;
-        break;
-      case 2:
-        outputType = `vec2<${fragColorType}>`;
-        result = `${outputType}(${v[0]}${suffix}, ${v[1]}${suffix})`;
-        break;
-      case 3:
-        outputType = `vec3<${fragColorType}>`;
-        result = `${outputType}(${v[0]}${suffix}, ${v[1]}${suffix}, ${v[2]}${suffix})`;
-        break;
-      case 4:
-        outputType = `vec4<${fragColorType}>`;
-        result = `${outputType}(${v[0]}${suffix}, ${v[1]}${suffix}, ${v[2]}${suffix}, ${v[3]}${suffix})`;
-        break;
-      default:
-        unreachable();
-    }
-
-    return `
-    @stage(fragment) fn main() -> @location(0) ${outputType} {
-      return ${result};
-    }`;
-  }
-
   getDescriptor(options = {}) {
     const defaultTargets = [{ format: 'rgba8unorm' }];
     const {
@@ -97,10 +50,16 @@ class F extends ValidationTest {
       targets = defaultTargets,
       sampleCount = 1,
       depthStencil,
-      fragmentShaderCode = this.getFragmentShaderCode(
-        kTextureFormatInfo[targets[0] ? targets[0].format : 'rgba8unorm'].sampleType,
-        4
-      ),
+      fragmentShaderCode = getFragmentShaderCodeWithOutput([
+        {
+          values,
+          plainType: getPlainTypeInfo(
+            kTextureFormatInfo[targets[0] ? targets[0].format : 'rgba8unorm'].sampleType
+          ),
+
+          componentCount: 4,
+        },
+      ]),
 
       noFragment = false,
     } = options;
@@ -109,7 +68,7 @@ class F extends ValidationTest {
       vertex: {
         module: this.device.createShaderModule({
           code: `
-            @stage(vertex) fn main() -> @builtin(position) vec4<f32> {
+            @vertex fn main() -> @builtin(position) vec4<f32> {
               return vec4<f32>(0.0, 0.0, 0.0, 1.0);
             }`,
         }),
@@ -236,10 +195,14 @@ g.test('at_least_one_color_state_is_required_for_complete_pipeline')
 g.test('color_formats_must_be_renderable')
   .desc(`TODO: review and add description; shorten name`)
   .params(u => u.combine('isAsync', [false, true]).combine('format', kTextureFormats))
+  .beforeAllSubcases(t => {
+    const { format } = t.params;
+    const info = kTextureFormatInfo[format];
+    t.selectDeviceOrSkipTestCase(info.feature);
+  })
   .fn(async t => {
     const { isAsync, format } = t.params;
     const info = kTextureFormatInfo[format];
-    await t.selectDeviceOrSkipTestCase(info.feature);
 
     const descriptor = t.getDescriptor({ targets: [{ format }] });
 
@@ -249,10 +212,14 @@ g.test('color_formats_must_be_renderable')
 g.test('depth_stencil_state,format')
   .desc(`The texture format in depthStencilState must be a depth/stencil format`)
   .params(u => u.combine('isAsync', [false, true]).combine('format', kTextureFormats))
+  .beforeAllSubcases(t => {
+    const { format } = t.params;
+    const info = kTextureFormatInfo[format];
+    t.selectDeviceOrSkipTestCase(info.feature);
+  })
   .fn(async t => {
     const { isAsync, format } = t.params;
     const info = kTextureFormatInfo[format];
-    await t.selectDeviceOrSkipTestCase(info.feature);
 
     const descriptor = t.getDescriptor({ depthStencil: { format } });
 
@@ -269,10 +236,14 @@ g.test('depth_stencil_state,depth_aspect,depth_test')
       .combine('format', kDepthStencilFormats)
       .combine('depthCompare', [undefined, ...kCompareFunctions])
   )
+  .beforeAllSubcases(t => {
+    const { format } = t.params;
+    const info = kTextureFormatInfo[format];
+    t.selectDeviceOrSkipTestCase(info.feature);
+  })
   .fn(async t => {
     const { isAsync, format, depthCompare } = t.params;
     const info = kTextureFormatInfo[format];
-    await t.selectDeviceOrSkipTestCase(info.feature);
 
     const descriptor = t.getDescriptor({
       depthStencil: { format, depthCompare },
@@ -292,10 +263,14 @@ g.test('depth_stencil_state,depth_aspect,depth_write')
       .combine('format', kDepthStencilFormats)
       .combine('depthWriteEnabled', [false, true])
   )
+  .beforeAllSubcases(t => {
+    const { format } = t.params;
+    const info = kTextureFormatInfo[format];
+    t.selectDeviceOrSkipTestCase(info.feature);
+  })
   .fn(async t => {
     const { isAsync, format, depthWriteEnabled } = t.params;
     const info = kTextureFormatInfo[format];
-    await t.selectDeviceOrSkipTestCase(info.feature);
 
     const descriptor = t.getDescriptor({
       depthStencil: { format, depthWriteEnabled },
@@ -315,10 +290,14 @@ g.test('depth_stencil_state,stencil_aspect,stencil_test')
       .combine('face', ['front', 'back'])
       .combine('compare', [undefined, ...kCompareFunctions])
   )
+  .beforeAllSubcases(t => {
+    const { format } = t.params;
+    const info = kTextureFormatInfo[format];
+    t.selectDeviceOrSkipTestCase(info.feature);
+  })
   .fn(async t => {
     const { isAsync, format, face, compare } = t.params;
     const info = kTextureFormatInfo[format];
-    await t.selectDeviceOrSkipTestCase(info.feature);
 
     let descriptor;
     if (face === 'front') {
@@ -349,10 +328,14 @@ g.test('depth_stencil_state,stencil_aspect,stencil_write')
       ])
       .combine('op', [undefined, ...kStencilOperations])
   )
+  .beforeAllSubcases(t => {
+    const { format } = t.params;
+    const info = kTextureFormatInfo[format];
+    t.selectDeviceOrSkipTestCase(info.feature);
+  })
   .fn(async t => {
     const { isAsync, format, faceAndOpType, op } = t.params;
     const info = kTextureFormatInfo[format];
-    await t.selectDeviceOrSkipTestCase(info.feature);
 
     let depthStencil;
     switch (faceAndOpType) {
@@ -412,34 +395,55 @@ g.test('pipeline_output_targets')
   - The componentCount of the fragment output (e.g. f32, vec2, vec3, vec4) must not have fewer
     channels than that of the color attachment texture formats. Extra components are allowed and are discarded.
 
-  MAINTAINENCE_TODO: update this test after the WebGPU SPEC ISSUE 50 "define what 'compatible' means
+  Otherwise, color state write mask must be 0.
+
+  MAINTENANCE_TODO: update this test after the WebGPU SPEC ISSUE 50 "define what 'compatible' means
   for render target formats" is resolved.`
   )
   .params(u =>
     u
       .combine('isAsync', [false, true])
-      .combine('format', kRenderableColorTextureFormats)
+      .combine('writeMask', [0, 0x1, 0x2, 0x4, 0x8, 0xf])
+      .combine('format', [undefined, ...kRenderableColorTextureFormats])
       .beginSubcases()
+      .combine('hasShaderOutput', [false, true])
+      .filter(p => p.format === undefined || p.hasShaderOutput === true)
       .combine('sampleType', ['float', 'uint', 'sint'])
       .combine('componentCount', [1, 2, 3, 4])
   )
+  .beforeAllSubcases(t => {
+    const { format } = t.params;
+    if (format) {
+      const info = kTextureFormatInfo[format];
+      t.selectDeviceOrSkipTestCase(info.feature);
+    }
+  })
   .fn(async t => {
-    const { isAsync, format, sampleType, componentCount } = t.params;
-    const info = kTextureFormatInfo[format];
-    await t.selectDeviceOrSkipTestCase(info.feature);
+    const { isAsync, writeMask, format, hasShaderOutput, sampleType, componentCount } = t.params;
+    const info = format ? kTextureFormatInfo[format] : null;
 
     const descriptor = t.getDescriptor({
-      targets: [{ format }],
-      fragmentShaderCode: t.getFragmentShaderCode(sampleType, componentCount),
+      targets: format ? [{ format, writeMask }] : [],
+      // To have a dummy depthStencil attachment to avoid having no attachment at all which is invalid
+      depthStencil: { format: 'depth24plus' },
+      fragmentShaderCode: getFragmentShaderCodeWithOutput(
+        hasShaderOutput ? [{ values, plainType: getPlainTypeInfo(sampleType), componentCount }] : []
+      ),
     });
 
-    const sampleTypeSuccess =
-      info.sampleType === 'float' || info.sampleType === 'unfilterable-float'
-        ? sampleType === 'float'
-        : info.sampleType === sampleType;
+    let _success = true;
+    if (hasShaderOutput && info) {
+      // there is a target correspond to the pipeline output
+      assert(format !== undefined);
+      const sampleTypeSuccess =
+        info.sampleType === 'float' || info.sampleType === 'unfilterable-float'
+          ? sampleType === 'float'
+          : info.sampleType === sampleType;
+      _success =
+        sampleTypeSuccess &&
+        componentCount >= kTexelRepresentationInfo[format].componentOrder.length;
+    }
 
-    const _success =
-      sampleTypeSuccess && componentCount >= kTexelRepresentationInfo[format].componentOrder.length;
     t.doCreateRenderPipelineTest(isAsync, _success, descriptor);
   });
 
@@ -515,6 +519,11 @@ g.test('pipeline_output_targets,blend')
         },
       ])
   )
+  .beforeAllSubcases(t => {
+    const { format } = t.params;
+    const info = kTextureFormatInfo[format];
+    t.selectDeviceOrSkipTestCase(info.feature);
+  })
   .fn(async t => {
     const sampleType = 'float';
     const {
@@ -527,7 +536,6 @@ g.test('pipeline_output_targets,blend')
       alphaDstFactor,
     } = t.params;
     const info = kTextureFormatInfo[format];
-    await t.selectDeviceOrSkipTestCase(info.feature);
 
     const descriptor = t.getDescriptor({
       targets: [
@@ -549,7 +557,9 @@ g.test('pipeline_output_targets,blend')
         },
       ],
 
-      fragmentShaderCode: t.getFragmentShaderCode(sampleType, componentCount),
+      fragmentShaderCode: getFragmentShaderCodeWithOutput([
+        { values, plainType: getPlainTypeInfo(sampleType), componentCount },
+      ]),
     });
 
     const colorBlendReadsSrcAlpha =
@@ -571,10 +581,14 @@ Tests if blending is used, the target's format must be blendable (support "float
   .params(u =>
     u.combine('isAsync', [false, true]).combine('format', kRenderableColorTextureFormats)
   )
+  .beforeAllSubcases(t => {
+    const { format } = t.params;
+    const info = kTextureFormatInfo[format];
+    t.selectDeviceOrSkipTestCase(info.feature);
+  })
   .fn(async t => {
     const { isAsync, format } = t.params;
     const info = kTextureFormatInfo[format];
-    await t.selectDeviceOrSkipTestCase(info.feature);
 
     const _success = info.sampleType === 'float';
 
@@ -598,7 +612,9 @@ Tests if blending is used, the target's format must be blendable (support "float
           },
         ],
 
-        fragmentShaderCode: t.getFragmentShaderCode('float', 4),
+        fragmentShaderCode: getFragmentShaderCodeWithOutput([
+          { values, plainType: getPlainTypeInfo(info.sampleType), componentCount: 4 },
+        ]),
       })
     );
   });
@@ -635,8 +651,10 @@ g.test('pipeline_output_targets,blend_min_max')
       operation,
     };
 
-    const fragmentShaderCode = t.getFragmentShaderCode('float', 4);
     const format = 'rgba8unorm';
+    const fragmentShaderCode = getFragmentShaderCodeWithOutput([
+      { values, plainType: 'f32', componentCount: 4 },
+    ]);
 
     const descriptor = t.getDescriptor({
       targets: [
@@ -665,24 +683,23 @@ g.test('pipeline_layout,device_mismatch')
     'Tests createRenderPipeline(Async) cannot be called with a pipeline layout created from another device'
   )
   .paramsSubcasesOnly(u => u.combine('isAsync', [true, false]).combine('mismatched', [true, false]))
+  .beforeAllSubcases(t => {
+    t.selectMismatchedDeviceOrSkipTestCase(undefined);
+  })
   .fn(async t => {
     const { isAsync, mismatched } = t.params;
 
-    if (mismatched) {
-      await t.selectMismatchedDeviceOrSkipTestCase(undefined);
-    }
+    const device = mismatched ? t.mismatchedDevice : t.device;
 
-    const layoutDescriptor = { bindGroupLayouts: [] };
-    const layout = mismatched
-      ? t.mismatchedDevice.createPipelineLayout(layoutDescriptor)
-      : t.device.createPipelineLayout(layoutDescriptor);
+    const layout = device.createPipelineLayout({ bindGroupLayouts: [] });
 
+    const format = 'rgba8unorm';
     const descriptor = {
       layout,
       vertex: {
         module: t.device.createShaderModule({
           code: `
-        @stage(vertex) fn main() -> @builtin(position) vec4<f32> {
+        @vertex fn main() -> @builtin(position) vec4<f32> {
           return vec4<f32>(0.0, 0.0, 0.0, 1.0);
         }
       `,
@@ -692,9 +709,12 @@ g.test('pipeline_layout,device_mismatch')
       },
 
       fragment: {
-        module: t.device.createShaderModule({ code: t.getFragmentShaderCode('float', 4) }),
+        module: t.device.createShaderModule({
+          code: getFragmentShaderCodeWithOutput([{ values, plainType: 'f32', componentCount: 4 }]),
+        }),
+
         entryPoint: 'main',
-        targets: [{ format: 'rgba8unorm' }],
+        targets: [{ format }],
       },
     };
 
@@ -712,15 +732,14 @@ g.test('shader_module,device_mismatch')
       { vertex_mismatched: false, fragment_mismatched: true, _success: false },
     ])
   )
+  .beforeAllSubcases(t => {
+    t.selectMismatchedDeviceOrSkipTestCase(undefined);
+  })
   .fn(async t => {
     const { isAsync, vertex_mismatched, fragment_mismatched, _success } = t.params;
 
-    if (vertex_mismatched || fragment_mismatched) {
-      await t.selectMismatchedDeviceOrSkipTestCase(undefined);
-    }
-
     const code = `
-      @stage(vertex) fn main() -> @builtin(position) vec4<f32> {
+      @vertex fn main() -> @builtin(position) vec4<f32> {
         return vec4<f32>(0.0, 0.0, 0.0, 1.0);
       }
     `;
@@ -735,8 +754,17 @@ g.test('shader_module,device_mismatch')
 
       fragment: {
         module: fragment_mismatched
-          ? t.mismatchedDevice.createShaderModule({ code: t.getFragmentShaderCode('float', 4) })
-          : t.device.createShaderModule({ code: t.getFragmentShaderCode('float', 4) }),
+          ? t.mismatchedDevice.createShaderModule({
+              code: getFragmentShaderCodeWithOutput([
+                { values, plainType: 'f32', componentCount: 4 },
+              ]),
+            })
+          : t.device.createShaderModule({
+              code: getFragmentShaderCodeWithOutput([
+                { values, plainType: 'f32', componentCount: 4 },
+              ]),
+            }),
+
         entryPoint: 'main',
         targets: [{ format: 'rgba8unorm' }],
       },
@@ -746,3 +774,9 @@ g.test('shader_module,device_mismatch')
 
     t.doCreateRenderPipelineTest(isAsync, _success, descriptor);
   });
+
+g.test('entry_point_name_must_match')
+  .desc(
+    'TODO: Test the matching of entrypoint names for vertex and fragment (see the equivalent test for createComputePipeline).'
+  )
+  .unimplemented();

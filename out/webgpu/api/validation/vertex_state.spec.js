@@ -12,7 +12,7 @@ kVertexFormatInfo } from
 import { ValidationTest } from './validation_test.js';
 
 const VERTEX_SHADER_CODE_WITH_NO_INPUT = `
-  @stage(vertex) fn main() -> @builtin(position) vec4<f32> {
+  @vertex fn main() -> @builtin(position) vec4<f32> {
     return vec4<f32>(0.0, 0.0, 0.0, 0.0);
   }
 `;
@@ -62,6 +62,7 @@ class F extends ValidationTest {
   vertexShaderCode)
   {
     const descriptor = {
+      layout: 'auto',
       vertex: {
         module: this.device.createShaderModule({ code: vertexShaderCode }),
         entryPoint: 'main',
@@ -70,7 +71,7 @@ class F extends ValidationTest {
       fragment: {
         module: this.device.createShaderModule({
           code: `
-            @stage(fragment) fn main() -> @location(0) vec4<f32> {
+            @fragment fn main() -> @location(0) vec4<f32> {
               return vec4<f32>(0.0, 1.0, 0.0, 1.0);
             }` }),
 
@@ -90,13 +91,14 @@ class F extends ValidationTest {
     const vsModule = this.device.createShaderModule({ code: vertexShader });
     const fsModule = this.device.createShaderModule({
       code: `
-        @stage(fragment) fn main() -> @location(0) vec4<f32> {
+        @fragment fn main() -> @location(0) vec4<f32> {
           return vec4<f32>(0.0, 1.0, 0.0, 1.0);
         }` });
 
 
     this.expectValidationError(() => {
       this.device.createRenderPipeline({
+        layout: 'auto',
         vertex: {
           module: vsModule,
           entryPoint: 'main',
@@ -118,7 +120,7 @@ class F extends ValidationTest {
 
     let count = 0;
     for (const input of inputs) {
-      interfaces += `@location(${input.location}) input${count} : ${input.type};\n`;
+      interfaces += `@location(${input.location}) input${count} : ${input.type},\n`;
       body += `var i${count} : ${input.type} = input.input${count};\n`;
       count++;
     }
@@ -127,7 +129,7 @@ class F extends ValidationTest {
       struct Inputs {
         ${interfaces}
       };
-      @stage(vertex) fn main(input : Inputs) -> @builtin(position) vec4<f32> {
+      @vertex fn main(input : Inputs) -> @builtin(position) vec4<f32> {
         ${body}
         return vec4<f32>(0.0, 0.0, 0.0, 0.0);
       }
@@ -149,7 +151,7 @@ u //
 .combine('count', [0, 1, kMaxVertexBuffers, kMaxVertexBuffers + 1]).
 combine('lastEmpty', [false, true])).
 
-fn(t => {
+fn((t) => {
   const { count, lastEmpty } = t.params;
 
   const vertexBuffers = [];
@@ -179,7 +181,7 @@ u //
 .combine('attribCount', [0, 1, kMaxVertexAttributes, kMaxVertexAttributes + 1]).
 combine('attribsPerBuffer', [0, 1, 4])).
 
-fn(t => {
+fn((t) => {
   const { attribCount, attribsPerBuffer } = t.params;
 
   const vertexBuffers = [];
@@ -223,7 +225,7 @@ kMaxVertexBufferArrayStride,
 kMaxVertexBufferArrayStride + 4])).
 
 
-fn(t => {
+fn((t) => {
   const { vertexBufferIndex, arrayStride } = t.params;
 
   const vertexBuffers = [];
@@ -252,7 +254,7 @@ kMaxVertexBufferArrayStride - 2,
 kMaxVertexBufferArrayStride])).
 
 
-fn(t => {
+fn((t) => {
   const { vertexBufferIndex, arrayStride } = t.params;
 
   const vertexBuffers = [];
@@ -276,7 +278,7 @@ combine('extraAttributeCount', [0, 1, kMaxVertexAttributes - 1]).
 combine('testAttributeAtStart', [false, true]).
 combine('testShaderLocation', [0, 1, kMaxVertexAttributes - 1, kMaxVertexAttributes])).
 
-fn(t => {
+fn((t) => {
   const {
     vertexBufferIndex,
     extraAttributeCount,
@@ -316,7 +318,7 @@ combine('shaderLocationA', [0, 1, 7, kMaxVertexAttributes - 1]).
 combine('shaderLocationB', [0, 1, 7, kMaxVertexAttributes - 1]).
 combine('extraAttributeCount', [0, 4])).
 
-fn(t => {
+fn((t) => {
   const {
     vertexBufferIndexA,
     vertexBufferIndexB,
@@ -367,13 +369,13 @@ fn(t => {
 g.test('vertex_shader_input_location_limit').
 desc(
 `Test that vertex shader's input's location decoration must be less than maxVertexAttributes.
-   - Test for shaderLocation 0, 1, limit - 1, limit`).
+   - Test for shaderLocation 0, 1, limit - 1, limit, MAX_I32 (the WGSL spec requires a non-negative i32)`).
 
 paramsSubcasesOnly((u) =>
 u //
-.combine('testLocation', [0, 1, kMaxVertexAttributes - 1, kMaxVertexAttributes, -1, 2 ** 32])).
+.combine('testLocation', [0, 1, kMaxVertexAttributes - 1, kMaxVertexAttributes, 2 ** 31 - 1])).
 
-fn(t => {
+fn((t) => {
   const { testLocation } = t.params;
 
   const shader = t.generateTestVertexShader([
@@ -413,7 +415,7 @@ combine('extraAttributeCount', [0, 1, kMaxVertexAttributes - 1]).
 combine('testAttributeAtStart', [false, true]).
 combine('testShaderLocation', [0, 1, 4, 7, kMaxVertexAttributes - 1])).
 
-fn(t => {
+fn((t) => {
   const {
     vertexBufferIndex,
     extraAttributeCount,
@@ -460,14 +462,14 @@ u.
 combine('format', kVertexFormats).
 beginSubcases().
 combine('shaderBaseType', ['u32', 'i32', 'f32']).
-expand('shaderType', p => [
+expand('shaderType', (p) => [
 p.shaderBaseType,
 `vec2<${p.shaderBaseType}>`,
 `vec3<${p.shaderBaseType}>`,
 `vec4<${p.shaderBaseType}>`])).
 
 
-fn(t => {
+fn((t) => {
   const { format, shaderBaseType, shaderType } = t.params;
   const shader = t.generateTestVertexShader([
   {
@@ -510,7 +512,7 @@ params((u) =>
 u.
 combine('format', kVertexFormats).
 combine('arrayStride', [256, kMaxVertexBufferArrayStride]).
-expand('offset', p => {
+expand('offset', (p) => {
   const { bytesPerComponent, componentCount } = kVertexFormatInfo[p.format];
   const formatSize = bytesPerComponent * componentCount;
 
@@ -531,7 +533,7 @@ combine('vertexBufferIndex', [0, 1, kMaxVertexBuffers - 1]).
 combine('extraAttributeCount', [0, 1, kMaxVertexAttributes - 1]).
 combine('testAttributeAtStart', [false, true])).
 
-fn(t => {
+fn((t) => {
   const {
     format,
     arrayStride,
@@ -603,7 +605,7 @@ combine('vertexBufferIndex', [0, 1, kMaxVertexBuffers - 1]).
 combine('extraAttributeCount', [0, 1, kMaxVertexAttributes - 1]).
 combine('testAttributeAtStart', [false, true])).
 
-fn(t => {
+fn((t) => {
   const {
     format,
     arrayStride,
@@ -634,7 +636,7 @@ fn(t => {
 
 g.test('many_attributes_overlapping').
 desc(`Test that it is valid to have many vertex attributes overlap`).
-fn(async t => {
+fn(async (t) => {
   // Create many attributes, each of them intersects with at least 3 others.
   const attributes = [];
   const formats = ['float32x4', 'uint32x4', 'sint32x4'];

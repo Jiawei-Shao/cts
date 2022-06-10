@@ -8,7 +8,7 @@ import { assert, raceWithRejectOnTimeout, unreachable } from '../../../common/ut
 import { kCanvasTextureFormats } from '../../capability_info.js';
 import { GPUTest } from '../../gpu_test.js';
 import { checkElementsEqual } from '../../util/check_contents.js';
-import { allCanvasTypes, createCanvas, createOnscreenCanvas } from '../../util/create_elements.js';
+import { kAllCanvasTypes, createCanvas, createOnscreenCanvas } from '../../util/create_elements.js';
 
 export const g = makeTestGroup(GPUTest);
 
@@ -80,10 +80,12 @@ async function initCanvasContent(t, format, canvasType) {
 
   const clearOnePixel = (origin, color) => {
     const pass = encoder.beginRenderPass({
-      colorAttachments: [{ view: tempTextureView, loadValue: color, storeOp: 'store' }],
+      colorAttachments: [
+        { view: tempTextureView, clearValue: color, loadOp: 'clear', storeOp: 'store' },
+      ],
     });
 
-    pass.endPass();
+    pass.end();
     encoder.copyTextureToTexture(
       { texture: tempTexture },
       { texture: canvasTexture, origin },
@@ -146,10 +148,10 @@ g.test('onscreenCanvas,snapshot')
         break;
       }
       case 'toBlob': {
-        const blobFromCanvs = new Promise(resolve => {
+        const blobFromCanvas = new Promise(resolve => {
           canvas.toBlob(blob => resolve(blob));
         });
-        const blob = await blobFromCanvs;
+        const blob = await blobFromCanvas;
         const url = URL.createObjectURL(blob);
         const img = new Image(canvas.width, canvas.height);
         img.src = url;
@@ -289,8 +291,8 @@ g.test('drawTo2DCanvas')
   .params(u =>
     u //
       .combine('format', kCanvasTextureFormats)
-      .combine('webgpuCanvasType', allCanvasTypes)
-      .combine('canvas2DType', allCanvasTypes)
+      .combine('webgpuCanvasType', kAllCanvasTypes)
+      .combine('canvas2DType', kAllCanvasTypes)
   )
   .fn(async t => {
     const { format, webgpuCanvasType, canvas2DType } = t.params;
