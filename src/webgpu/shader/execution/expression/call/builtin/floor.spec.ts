@@ -9,15 +9,39 @@ Returns the floor of e. Component-wise when T is a vector.
 
 import { makeTestGroup } from '../../../../../../common/framework/test_group.js';
 import { GPUTest } from '../../../../../gpu_test.js';
-import { correctlyRoundedMatch } from '../../../../../util/compare.js';
-import { kBit } from '../../../../../util/constants.js';
-import { f32, f32Bits, TypeF32 } from '../../../../../util/conversion.js';
+import { TypeF32 } from '../../../../../util/conversion.js';
+import { floorInterval } from '../../../../../util/f32_interval.js';
 import { fullF32Range } from '../../../../../util/math.js';
-import { allInputSources, Case, Config, makeUnaryF32Case, run } from '../../expression.js';
+import { makeCaseCache } from '../../case_cache.js';
+import { allInputSources, generateUnaryToF32IntervalCases, run } from '../../expression.js';
 
 import { builtin } from './builtin.js';
 
 export const g = makeTestGroup(GPUTest);
+
+export const d = makeCaseCache('floor', {
+  f32: () => {
+    return generateUnaryToF32IntervalCases(
+      [
+        // Small positive numbers
+        0.1,
+        0.9,
+        1.0,
+        1.1,
+        1.9,
+        // Small negative numbers
+        -0.1,
+        -0.9,
+        -1.0,
+        -1.1,
+        -1.9,
+        ...fullF32Range(),
+      ],
+      'unfiltered',
+      floorInterval
+    );
+  },
+});
 
 g.test('abstract_float')
   .specURL('https://www.w3.org/TR/WGSL/#float-builtin-functions')
@@ -34,37 +58,8 @@ g.test('f32')
     u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4] as const)
   )
   .fn(async t => {
-    const cfg: Config = t.params;
-    cfg.cmpFloats = correctlyRoundedMatch();
-
-    const makeCase = (x: number): Case => {
-      return makeUnaryF32Case(x, Math.floor);
-    };
-
-    const cases: Array<Case> = [
-      // Small positive numbers
-      { input: f32(0.1), expected: f32(0.0) },
-      { input: f32(0.9), expected: f32(0.0) },
-      { input: f32(1.0), expected: f32(1.0) },
-      { input: f32(1.1), expected: f32(1.0) },
-      { input: f32(1.9), expected: f32(1.0) },
-
-      // Small negative numbers
-      { input: f32(-0.1), expected: f32(-1.0) },
-      { input: f32(-0.9), expected: f32(-1.0) },
-      { input: f32(-1.0), expected: f32(-1.0) },
-      { input: f32(-1.1), expected: f32(-2.0) },
-      { input: f32(-1.9), expected: f32(-2.0) },
-
-      // Min and Max f32
-      { input: f32Bits(kBit.f32.negative.max), expected: f32(-1.0) },
-      { input: f32Bits(kBit.f32.negative.min), expected: f32Bits(kBit.f32.negative.min) },
-      { input: f32Bits(kBit.f32.positive.min), expected: f32(0.0) },
-      { input: f32Bits(kBit.f32.positive.max), expected: f32Bits(kBit.f32.positive.max) },
-      ...fullF32Range().map(x => makeCase(x)),
-    ];
-
-    run(t, builtin('floor'), [TypeF32], TypeF32, cfg, cases);
+    const cases = await d.get('f32');
+    await run(t, builtin('floor'), [TypeF32], TypeF32, t.params, cases);
   });
 
 g.test('f16')

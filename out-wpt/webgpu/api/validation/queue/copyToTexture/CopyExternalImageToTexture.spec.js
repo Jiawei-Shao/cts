@@ -2,8 +2,14 @@
  * AUTO-GENERATED - DO NOT EDIT. Source: https://github.com/gpuweb/cts
  **/ export const description = `
 copyExternalImageToTexture Validation Tests in Queue.
+Note that we don't need to add tests on the destination texture dimension as currently we require
+the destination texture should have RENDER_ATTACHMENT usage, which is only allowed to be used on 2D
+textures.
 `;
-import { getResourcePath } from '../../../../../common/framework/resources.js';
+import {
+  getResourcePath,
+  getCrossOriginResourcePath,
+} from '../../../../../common/framework/resources.js';
 import { makeTestGroup } from '../../../../../common/framework/test_group.js';
 import { raceWithRejectOnTimeout, unreachable, assert } from '../../../../../common/util/util.js';
 import {
@@ -50,9 +56,21 @@ function generateCopySizeForSrcOOB({ srcOrigin }) {
 
   return [
     justFitCopySize, // correct size, maybe no-op copy.
-    { width: justFitCopySize.width + 1, height: justFitCopySize.height, depthOrArrayLayers: 1 }, // OOB in width
-    { width: justFitCopySize.width, height: justFitCopySize.height + 1, depthOrArrayLayers: 1 }, // OOB in height
-    { width: justFitCopySize.width, height: justFitCopySize.height, depthOrArrayLayers: 2 }, // OOB in depthOrArrayLayers
+    {
+      width: justFitCopySize.width + 1,
+      height: justFitCopySize.height,
+      depthOrArrayLayers: justFitCopySize.depthOrArrayLayers,
+    }, // OOB in width
+    {
+      width: justFitCopySize.width,
+      height: justFitCopySize.height + 1,
+      depthOrArrayLayers: justFitCopySize.depthOrArrayLayers,
+    }, // OOB in height
+    {
+      width: justFitCopySize.width,
+      height: justFitCopySize.height,
+      depthOrArrayLayers: justFitCopySize.depthOrArrayLayers + 1,
+    }, // OOB in depthOrArrayLayers
   ];
 }
 
@@ -98,24 +116,23 @@ function generateCopySizeForDstOOB({ mipLevel, dstOrigin }) {
       width: justFitCopySize.width + 1,
       height: justFitCopySize.height,
       depthOrArrayLayers: justFitCopySize.depthOrArrayLayers,
-    },
-    // OOB in width
+    }, // OOB in width
     {
       width: justFitCopySize.width,
       height: justFitCopySize.height + 1,
       depthOrArrayLayers: justFitCopySize.depthOrArrayLayers,
-    },
-    // OOB in height
+    }, // OOB in height
     {
       width: justFitCopySize.width,
       height: justFitCopySize.height,
       depthOrArrayLayers: justFitCopySize.depthOrArrayLayers + 1,
-    },
-    // OOB in depthOrArrayLayers
+    }, // OOB in depthOrArrayLayers
   ];
 }
 
 class CopyExternalImageToTextureTest extends ValidationTest {
+  onlineCrossOriginUrl = 'https://raw.githubusercontent.com/gpuweb/gpuweb/main/logo/webgpu.png';
+
   getImageData(width, height) {
     if (typeof ImageData === 'undefined') {
       this.skip('ImageData is not supported.');
@@ -188,7 +205,7 @@ g.test('source_canvas,contexts')
         { width: 1, height: 1, depthOrArrayLayers: 1 },
       ])
   )
-  .fn(async t => {
+  .fn(t => {
     const { contextType, copySize } = t.params;
     const canvas = createOnscreenCanvas(t, 1, 1);
     const dstTexture = t.device.createTexture({
@@ -233,7 +250,7 @@ g.test('source_offscreenCanvas,contexts')
         { width: 1, height: 1, depthOrArrayLayers: 1 },
       ])
   )
-  .fn(async t => {
+  .fn(t => {
     const { contextType, copySize } = t.params;
     const canvas = createOffscreenCanvas(t, 1, 1);
     const dstTexture = t.device.createTexture({
@@ -270,9 +287,6 @@ g.test('source_image,crossOrigin')
   images.
 
   Check whether 'SecurityError' is generated when source image is not origin clean.
-
-  TODO: make this test case work offline, ref link to achieve this :
-  https://web-platform-tests.org/writing-tests/server-features.html#tests-involving-multiple-origins
   `
   )
   .params(u =>
@@ -292,9 +306,8 @@ g.test('source_image,crossOrigin')
       t.skip('DOM is not available to create an image element.');
     }
 
-    const crossOriginUrl = 'https://get.webgl.org/conformance-resources/opengl_logo.jpg';
-    const originCleanUrl = getResourcePath('Di-3d.png');
-
+    const crossOriginUrl = getCrossOriginResourcePath('webgpu.png', t.onlineCrossOriginUrl);
+    const originCleanUrl = getResourcePath('webgpu.png');
     const img = document.createElement('img');
     img.src = isOriginClean ? originCleanUrl : crossOriginUrl;
 
@@ -306,8 +319,7 @@ g.test('source_image,crossOrigin')
       if (isOriginClean) {
         throw e;
       } else {
-        t.warn('Something wrong happens in get.webgl.org');
-        t.skip('Cannot load image in time');
+        t.skip('Cannot load cross origin image in time');
         return;
       }
     }
@@ -440,11 +452,11 @@ g.test('source_canvas,state')
         { width: 1, height: 1, depthOrArrayLayers: 1 },
       ])
   )
-  .fn(async t => {
+  .fn(t => {
     const { state, copySize } = t.params;
     const canvas = createOnscreenCanvas(t, 1, 1);
     if (typeof canvas.transferControlToOffscreen === 'undefined') {
-      t.skip("Browser doesn't support HTMLCanvasElement transfer control right");
+      t.skip("Browser doesn't support HTMLCanvasElement.transferControlToOffscreen");
       return;
     }
 
@@ -604,10 +616,10 @@ g.test('destination_texture,device_mismatch')
   })
   .fn(async t => {
     const { mismatched } = t.params;
-    const device = mismatched ? t.mismatchedDevice : t.device;
+    const sourceDevice = mismatched ? t.mismatchedDevice : t.device;
     const copySize = { width: 1, height: 1, depthOrArrayLayers: 1 };
 
-    const texture = device.createTexture({
+    const texture = sourceDevice.createTexture({
       size: copySize,
       format: 'rgba8unorm',
       usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
@@ -751,7 +763,6 @@ g.test('destination_texture,format')
       format,
       usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
     });
-
     void t.device.popErrorScope();
 
     const success = kValidTextureFormatsForCopyE2T.includes(format);
@@ -788,7 +799,6 @@ g.test('OOB,source')
         height: kDefaultHeight + 1,
         depthOrArrayLayers: kDefaultDepth,
       },
-
       mipLevelCount: kDefaultMipLevelCount,
       format: 'bgra8unorm',
       usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
@@ -841,7 +851,6 @@ g.test('OOB,destination')
         height: kDefaultHeight,
         depthOrArrayLayers: kDefaultDepth,
       },
-
       format: 'bgra8unorm',
       mipLevelCount: kDefaultMipLevelCount,
       usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
@@ -870,7 +879,6 @@ g.test('OOB,destination')
         mipLevel,
         origin: dstOrigin,
       },
-
       copySize,
       success,
       hasOperationError ? 'OperationError' : ''

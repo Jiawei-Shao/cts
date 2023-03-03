@@ -9,15 +9,31 @@ Returns the reciprocal of sqrt(e). Component-wise when T is a vector.
 
 import { makeTestGroup } from '../../../../../../common/framework/test_group.js';
 import { GPUTest } from '../../../../../gpu_test.js';
-import { ulpMatch } from '../../../../../util/compare.js';
-import { kBit, kValue } from '../../../../../util/constants.js';
-import { f32, f32Bits, TypeF32 } from '../../../../../util/conversion.js';
+import { kValue } from '../../../../../util/constants.js';
+import { TypeF32 } from '../../../../../util/conversion.js';
+import { inverseSqrtInterval } from '../../../../../util/f32_interval.js';
 import { biasedRange, linearRange } from '../../../../../util/math.js';
-import { allInputSources, Case, Config, run } from '../../expression.js';
+import { makeCaseCache } from '../../case_cache.js';
+import { allInputSources, generateUnaryToF32IntervalCases, run } from '../../expression.js';
 
 import { builtin } from './builtin.js';
 
 export const g = makeTestGroup(GPUTest);
+
+export const d = makeCaseCache('inverseSqrt', {
+  f32: () => {
+    return generateUnaryToF32IntervalCases(
+      [
+        // 0 < x <= 1 linearly spread
+        ...linearRange(kValue.f32.positive.min, 1, 100),
+        // 1 <= x < 2^32, biased towards 1
+        ...biasedRange(1, 2 ** 32, 1000),
+      ],
+      'unfiltered',
+      inverseSqrtInterval
+    );
+  },
+});
 
 g.test('abstract_float')
   .specURL('https://www.w3.org/TR/WGSL/#float-builtin-functions')
@@ -34,24 +50,8 @@ g.test('f32')
     u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4] as const)
   )
   .fn(async t => {
-    // [1]: Need to decide what the ground-truth is.
-    const makeCase = (x: number): Case => {
-      return { input: f32(x), expected: f32(1 / Math.sqrt(x)) };
-    };
-
-    // Well defined cases
-    const cases: Array<Case> = [
-      { input: f32Bits(kBit.f32.infinity.positive), expected: f32(0) },
-      { input: f32(1), expected: f32(1) },
-      // 0 < x <= 1 linearly spread
-      ...linearRange(kValue.f32.positive.min, 1, 100).map(x => makeCase(x)),
-      // 1 <= x < 2^32, biased towards 1
-      ...biasedRange(1, 2 ** 32, 1000).map(x => makeCase(x)),
-    ];
-
-    const cfg: Config = t.params;
-    cfg.cmpFloats = ulpMatch(2);
-    run(t, builtin('inverseSqrt'), [TypeF32], TypeF32, cfg, cases);
+    const cases = await d.get('f32');
+    await run(t, builtin('inverseSqrt'), [TypeF32], TypeF32, t.params, cases);
   });
 
 g.test('f16')

@@ -65,7 +65,7 @@ g.test('color_attachments,device_mismatch')
   .beforeAllSubcases(t => {
     t.selectMismatchedDeviceOrSkipTestCase(undefined);
   })
-  .fn(async t => {
+  .fn(t => {
     const { view0Mismatched, target0Mismatched, view1Mismatched, target1Mismatched } = t.params;
     const mismatched = view0Mismatched || target0Mismatched || view1Mismatched || target1Mismatched;
 
@@ -114,7 +114,7 @@ g.test('depth_stencil_attachment,device_mismatch')
   .beforeAllSubcases(t => {
     t.selectMismatchedDeviceOrSkipTestCase(undefined);
   })
-  .fn(async t => {
+  .fn(t => {
     const { mismatched } = t.params;
 
     const descriptor: GPUTextureDescriptor = {
@@ -153,16 +153,59 @@ g.test('occlusion_query_set,device_mismatch')
   .beforeAllSubcases(t => {
     t.selectMismatchedDeviceOrSkipTestCase(undefined);
   })
-  .fn(async t => {
+  .fn(t => {
     const { mismatched } = t.params;
-    const device = mismatched ? t.mismatchedDevice : t.device;
+    const sourceDevice = mismatched ? t.mismatchedDevice : t.device;
 
-    const occlusionQuerySet = device.createQuerySet({
+    const occlusionQuerySet = sourceDevice.createQuerySet({
       type: 'occlusion',
       count: 1,
     });
     t.trackForCleanup(occlusionQuerySet);
 
     const encoder = t.createEncoder('render pass', { occlusionQuerySet });
+    encoder.validateFinish(!mismatched);
+  });
+
+g.test('timestamp_query_set,device_mismatch')
+  .desc(
+    `
+  Tests beginRenderPass cannot be called with a timestamp query set created from another device.
+  `
+  )
+  .paramsSubcasesOnly(u => u.combine('mismatched', [true, false]))
+  .beforeAllSubcases(t => {
+    t.selectDeviceOrSkipTestCase(['timestamp-query']);
+    t.selectMismatchedDeviceOrSkipTestCase('timestamp-query');
+  })
+  .fn(t => {
+    const { mismatched } = t.params;
+    const sourceDevice = mismatched ? t.mismatchedDevice : t.device;
+
+    const timestampWrite = {
+      querySet: sourceDevice.createQuerySet({ type: 'timestamp', count: 1 }),
+      queryIndex: 0,
+      location: 'beginning' as const,
+    };
+
+    const colorTexture = t.device.createTexture({
+      format: 'rgba8unorm',
+      size: { width: 4, height: 4, depthOrArrayLayers: 1 },
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+
+    const encoder = t.createEncoder('non-pass');
+    const pass = encoder.encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: colorTexture.createView(),
+          loadOp: 'load',
+          storeOp: 'store',
+        },
+      ],
+      timestampWrites: [timestampWrite],
+    });
+    pass.end();
+
     encoder.validateFinish(!mismatched);
   });

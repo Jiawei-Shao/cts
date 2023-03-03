@@ -10,14 +10,34 @@ Returns the arc tangent of e1 over e2. Component-wise when T is a vector.
 `;
 import { makeTestGroup } from '../../../../../../common/framework/test_group.js';
 import { GPUTest } from '../../../../../gpu_test.js';
-import { anyOf, ulpMatch } from '../../../../../util/compare.js';
-import { f64, TypeF32 } from '../../../../../util/conversion.js';
-import { fullF32Range, isSubnormalNumber } from '../../../../../util/math.js';
-import { allInputSources, makeBinaryF32Case, run } from '../../expression.js';
+import { kValue } from '../../../../../util/constants.js';
+import { TypeF32 } from '../../../../../util/conversion.js';
+import { atan2Interval } from '../../../../../util/f32_interval.js';
+import { linearRange, sparseF32Range } from '../../../../../util/math.js';
+import { makeCaseCache } from '../../case_cache.js';
+import { allInputSources, generateBinaryToF32IntervalCases, run } from '../../expression.js';
 
 import { builtin } from './builtin.js';
 
 export const g = makeTestGroup(GPUTest);
+
+export const d = makeCaseCache('atan2', {
+  f32: () => {
+    // Using sparse, since there a N^2 cases being generated, but including extra values around 0, since that is where
+    // there is a discontinuity that implementations tend to behave badly at.
+    const numeric_range = [
+      ...sparseF32Range(),
+      ...linearRange(kValue.f32.negative.max, kValue.f32.positive.min, 10),
+    ];
+
+    return generateBinaryToF32IntervalCases(
+      numeric_range,
+      numeric_range,
+      'unfiltered',
+      atan2Interval
+    );
+  },
+});
 
 g.test('abstract_float')
   .specURL('https://www.w3.org/TR/WGSL/#float-builtin-functions')
@@ -36,38 +56,8 @@ TODO(#792): Decide what the ground-truth is for these tests. [1]
   )
   .params(u => u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4]))
   .fn(async t => {
-    const cfg = t.params;
-    cfg.cmpFloats = ulpMatch(4096);
-
-    // [1]: Need to decide what the ground-truth is.
-    const makeCase = (y, x) => {
-      const c = makeBinaryF32Case(y, x, Math.atan2, true);
-      if (isSubnormalNumber(y)) {
-        // If y is subnormal, also expect possible results of atan2(0, x)
-        c.expected = anyOf(c.expected, f64(0), f64(Math.PI), f64(-Math.PI));
-      }
-      return c;
-    };
-
-    const numeric_range = fullF32Range({
-      neg_norm: 100,
-      neg_sub: 10,
-      pos_sub: 10,
-      pos_norm: 100,
-    });
-
-    const cases = [];
-    numeric_range.forEach((y, y_idx) => {
-      numeric_range.forEach((x, x_idx) => {
-        // atan2(y, 0) is not well defined, so skipping those cases
-        if (!isSubnormalNumber(x)) {
-          if (x_idx >= y_idx) {
-            cases.push(makeCase(y, x));
-          }
-        }
-      });
-    });
-    run(t, builtin('atan2'), [TypeF32, TypeF32], TypeF32, cfg, cases);
+    const cases = await d.get('f32');
+    await run(t, builtin('atan2'), [TypeF32, TypeF32], TypeF32, t.params, cases);
   });
 
 g.test('f16')

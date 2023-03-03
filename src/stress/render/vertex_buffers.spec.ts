@@ -18,7 +18,7 @@ function createHugeVertexBuffer(t: GPUTest, size: number) {
     compute: {
       module: t.device.createShaderModule({
         code: `
-        struct Buffer { data: array<vec2<u32>>; };
+        struct Buffer { data: array<vec2<u32>>, };
         @group(0) @binding(0) var<storage, read_write> buffer: Buffer;
         @compute @workgroup_size(1) fn main(
             @builtin(global_invocation_id) id: vec3<u32>) {
@@ -45,7 +45,7 @@ function createHugeVertexBuffer(t: GPUTest, size: number) {
   const pass = encoder.beginComputePass();
   pass.setPipeline(pipeline);
   pass.setBindGroup(0, bindGroup);
-  pass.dispatch(size);
+  pass.dispatchWorkgroups(size);
   pass.end();
 
   const vertexBuffer = t.device.createBuffer({
@@ -59,7 +59,7 @@ function createHugeVertexBuffer(t: GPUTest, size: number) {
 
 g.test('many')
   .desc(`Tests execution of draw calls using a huge vertex buffer.`)
-  .fn(async t => {
+  .fn(t => {
     const kSize = 4096;
     const buffer = createHugeVertexBuffer(t, kSize);
     const module = t.device.createShaderModule({

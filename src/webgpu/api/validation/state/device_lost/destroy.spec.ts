@@ -325,7 +325,7 @@ g.test('createBindGroup')
   .desc(
     `
 Tests creating bind group on destroyed device. Tests valid combinations of:
-  - Various binded resource types
+  - Various bound resource types
   - Various valid binding entries
   - Maximum set of visibility for each binding entry
   `
@@ -674,7 +674,14 @@ Tests encoding and finishing a writeTimestamp command on destroyed device.
   )
   .beforeAllSubcases(t => {
     const { type } = t.params;
-    t.selectDeviceForQueryTypeOrSkipTestCase(type);
+
+    // writeTimestamp is only available for devices that enable the 'timestamp-query' feature.
+    const queryTypes: GPUQueryType[] = ['timestamp'];
+    if (type !== 'timestamp') {
+      queryTypes.push(type);
+    }
+
+    t.selectDeviceForQueryTypeOrSkipTestCase(queryTypes);
   })
   .fn(async t => {
     const { type, stage, awaitLost } = t.params;

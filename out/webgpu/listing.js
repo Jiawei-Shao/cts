@@ -23,7 +23,7 @@ export const listing = [
       "api",
       "operation",
       "adapter",
-      "requestDevice"
+      "requestAdapter"
     ]
   },
   {
@@ -31,7 +31,15 @@ export const listing = [
       "api",
       "operation",
       "adapter",
-      "requestDevice_limits"
+      "requestAdapterInfo"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "operation",
+      "adapter",
+      "requestDevice"
     ]
   },
   {
@@ -40,7 +48,7 @@ export const listing = [
       "operation",
       "async_ordering"
     ],
-    "readme": "Test ordering of async resolutions between promises returned by the following calls (and possibly\nbetween multiple of the same call), where there are constraints on the ordering.\nSpec issue: https://github.com/gpuweb/gpuweb/issues/962\n\nTODO: plan and implement\n- createReadyPipeline() (not sure if this actually has any ordering constraints)\n- cmdbuf.executionTime\n- device.popErrorScope()\n- device.lost\n- queue.onSubmittedWorkDone()\n- buffer.mapAsync()\n- shadermodule.compilationInfo()"
+    "readme": "Test ordering of async resolutions between promises returned by the following calls (and possibly\nbetween multiple of the same call), where there are constraints on the ordering.\nSpec issue: https://github.com/gpuweb/gpuweb/issues/962\n\nTODO: plan and implement\n- createReadyPipeline() (not sure if this actually has any ordering constraints)\n- cmdbuf.executionTime\n- device.popErrorScope()\n- device.lost\n- queue.onSubmittedWorkDone()\n- buffer.mapAsync()\n- shadermodule.getCompilationInfo()"
   },
   {
     "file": [
@@ -186,17 +194,17 @@ export const listing = [
     "file": [
       "api",
       "operation",
-      "device",
-      "lost"
+      "compute_pipeline",
+      "overrides"
     ]
   },
   {
     "file": [
       "api",
       "operation",
-      "error_scope"
-    ],
-    "readme": "TODO: plan and implement\n- test very deeply nested error scopes, make sure errors go to the right place, e.g.\n    - validation, ..., validation, out-of-memory\n    - out-of-memory, validation, ..., validation\n    - out-of-memory, ..., out-of-memory, validation\n    - validation, out-of-memory, ..., out-of-memory\n- use error scopes on two different threads and make sure errors go to the right place\n- unhandled errors always go to the \"original\" device object\n    - test they go nowhere if the original was dropped (attemptGarbageCollection to make sure)"
+      "device",
+      "lost"
+    ]
   },
   {
     "file": [
@@ -267,6 +275,13 @@ export const listing = [
     "file": [
       "api",
       "operation",
+      "reflection"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "operation",
       "render_pass"
     ],
     "readme": "Render pass stuff other than commands (which are in command_buffer/)."
@@ -308,14 +323,6 @@ export const listing = [
       "api",
       "operation",
       "render_pipeline",
-      "alpha_to_coverage"
-    ]
-  },
-  {
-    "file": [
-      "api",
-      "operation",
-      "render_pipeline",
       "culling_tests"
     ]
   },
@@ -324,7 +331,7 @@ export const listing = [
       "api",
       "operation",
       "render_pipeline",
-      "entry_point_name"
+      "overrides"
     ]
   },
   {
@@ -372,7 +379,7 @@ export const listing = [
       "api",
       "operation",
       "rendering",
-      "blending"
+      "color_target_state"
     ]
   },
   {
@@ -381,6 +388,14 @@ export const listing = [
       "operation",
       "rendering",
       "depth"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "operation",
+      "rendering",
+      "depth_bias"
     ]
   },
   {
@@ -413,6 +428,14 @@ export const listing = [
       "operation",
       "rendering",
       "robust_access_index"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "operation",
+      "rendering",
+      "stencil"
     ]
   },
   {
@@ -536,13 +559,6 @@ export const listing = [
     "file": [
       "api",
       "validation",
-      "attachment_compatibility"
-    ]
-  },
-  {
-    "file": [
-      "api",
-      "validation",
       "buffer",
       "create"
     ]
@@ -586,15 +602,6 @@ export const listing = [
       "validation",
       "capability_checks",
       "features",
-      "depth_clip_control"
-    ]
-  },
-  {
-    "file": [
-      "api",
-      "validation",
-      "capability_checks",
-      "features",
       "query_types"
     ]
   },
@@ -620,6 +627,238 @@ export const listing = [
     "file": [
       "api",
       "validation",
+      "capability_checks",
+      "limits",
+      "maxBindGroups"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxBindingsPerBindGroup"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxBufferSize"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxColorAttachmentBytesPerSample"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxColorAttachments"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxDynamicStorageBuffersPerPipelineLayout"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxDynamicUniformBuffersPerPipelineLayout"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxInterStageShaderComponents"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxInterStageShaderVariables"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxSampledTexturesPerShaderStage"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxSamplersPerShaderStage"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxStorageBufferBindingSize"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxStorageBuffersPerShaderStage"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxStorageTexturesPerShaderStage"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxTextureArrayLayers"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxTextureDimension1D"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxTextureDimension2D"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxTextureDimension3D"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxUniformBufferBindingSize"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxUniformBuffersPerShaderStage"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxVertexAttributes"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxVertexBufferArrayStride"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxVertexBuffers"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "minStorageBufferOffsetAlignment"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "minUniformBufferOffsetAlignment"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "compute_pipeline"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
       "createBindGroup"
     ]
   },
@@ -634,21 +873,7 @@ export const listing = [
     "file": [
       "api",
       "validation",
-      "createComputePipeline"
-    ]
-  },
-  {
-    "file": [
-      "api",
-      "validation",
       "createPipelineLayout"
-    ]
-  },
-  {
-    "file": [
-      "api",
-      "validation",
-      "createRenderPipeline"
     ]
   },
   {
@@ -676,7 +901,15 @@ export const listing = [
     "file": [
       "api",
       "validation",
-      "create_pipeline"
+      "debugMarker"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "encoding",
+      "beginComputePass"
     ]
   },
   {
@@ -685,15 +918,6 @@ export const listing = [
       "validation",
       "encoding",
       "beginRenderPass"
-    ]
-  },
-  {
-    "file": [
-      "api",
-      "validation",
-      "encoding",
-      "cmds",
-      "buffer_texture_copies"
     ]
   },
   {
@@ -851,6 +1075,14 @@ export const listing = [
       "api",
       "validation",
       "encoding",
+      "encoder_open_state"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "encoding",
       "encoder_state"
     ]
   },
@@ -918,6 +1150,20 @@ export const listing = [
     "file": [
       "api",
       "validation",
+      "getBindGroupLayout"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "gpu_external_texture_expiration"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
       "image_copy"
     ],
     "readme": "writeTexture + copyBufferToTexture + copyTextureToBuffer validation tests.\n\nTest coverage:\n* resource usages:\n\t- texture_usage_must_be_valid: for GPUTextureUsage::COPY_SRC, GPUTextureUsage::COPY_DST flags.\n\t- buffer_usage_must_be_valid: for GPUBufferUsage::COPY_SRC, GPUBufferUsage::COPY_DST flags.\n\n* textureCopyView:\n\t- texture_must_be_valid: for valid, destroyed, error textures.\n\t- sample_count_must_be_1: for sample count 1 and 4.\n\t- mip_level_must_be_in_range: for various combinations of mipLevel and mipLevelCount.\n\t- format: for all formats with full and non-full copies on width, height, and depth.\n\t- texel_block_alignment_on_origin: for all formats and coordinates.\n\n* bufferCopyView:\n\t- buffer_must_be_valid: for valid, destroyed, error buffers.\n\t- bytes_per_row_alignment: for bytesPerRow to be 256-byte aligned or not, and bytesPerRow is required or not.\n\n* linear texture data:\n\t- bound_on_rows_per_image: for various combinations of copyDepth (1, >1), copyHeight, rowsPerImage.\n\t- offset_plus_required_bytes_in_copy_overflow\n\t- required_bytes_in_copy: testing minimal data size and data size too small for various combinations of bytesPerRow, rowsPerImage, copyExtent and offset. for the copy method, bytesPerRow is computed as bytesInACompleteRow aligned to be a multiple of 256 + bytesPerRowPadding * 256.\n\t- texel_block_alignment_on_rows_per_image: for all formats.\n\t- offset_alignment: for all formats.\n\t- bound_on_offset: for various combinations of offset and dataSize.\n\n* texture copy range:\n\t- 1d_texture: copyExtent.height isn't 1, copyExtent.depthOrArrayLayers isn't 1.\n\t- texel_block_alignment_on_size: for all formats and coordinates.\n\t- texture_range_conditons: for all coordinate and various combinations of origin, copyExtent, textureSize and mipLevel.\n\nTODO: more test coverage for 1D and 3D textures."
@@ -935,6 +1181,14 @@ export const listing = [
       "api",
       "validation",
       "image_copy",
+      "buffer_texture_copies"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "image_copy",
       "layout_related"
     ]
   },
@@ -944,14 +1198,6 @@ export const listing = [
       "validation",
       "image_copy",
       "texture_related"
-    ]
-  },
-  {
-    "file": [
-      "api",
-      "validation",
-      "initialization",
-      "requestDevice"
     ]
   },
   {
@@ -1031,9 +1277,33 @@ export const listing = [
     "file": [
       "api",
       "validation",
+      "queue",
+      "writeTexture"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
       "render_pass"
     ],
     "readme": "Render pass stuff other than commands (which are in encoding/cmds/)."
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "render_pass",
+      "attachment_compatibility"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "render_pass",
+      "render_pass_descriptor"
+    ]
   },
   {
     "file": [
@@ -1055,7 +1325,72 @@ export const listing = [
     "file": [
       "api",
       "validation",
-      "render_pass_descriptor"
+      "render_pipeline",
+      "depth_stencil_state"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "render_pipeline",
+      "fragment_state"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "render_pipeline",
+      "inter_stage"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "render_pipeline",
+      "misc"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "render_pipeline",
+      "multisample_state"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "render_pipeline",
+      "overrides"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "render_pipeline",
+      "primitive_state"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "render_pipeline",
+      "shader_module"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "render_pipeline",
+      "vertex_state"
     ]
   },
   {
@@ -1116,6 +1451,22 @@ export const listing = [
     "file": [
       "api",
       "validation",
+      "shader_module",
+      "entry_point"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "shader_module",
+      "overrides"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
       "state",
       "device_lost"
     ],
@@ -1135,6 +1486,14 @@ export const listing = [
       "api",
       "validation",
       "texture",
+      "bgra8unorm_storage"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "texture",
       "destroy"
     ]
   },
@@ -1142,7 +1501,8 @@ export const listing = [
     "file": [
       "api",
       "validation",
-      "vertex_state"
+      "texture",
+      "rg11b10ufloat_renderable"
     ]
   },
   {
@@ -1198,6 +1558,15 @@ export const listing = [
       "execution",
       "expression",
       "binary",
+      "bool_logical"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "expression",
+      "binary",
       "f32_arithmetic"
     ]
   },
@@ -1208,6 +1577,33 @@ export const listing = [
       "expression",
       "binary",
       "f32_logical"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "expression",
+      "binary",
+      "f32_matrix_arithmetic"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "expression",
+      "binary",
+      "i32_arithmetic"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "expression",
+      "binary",
+      "u32_arithmetic"
     ]
   },
   {
@@ -1977,6 +2373,16 @@ export const listing = [
       "expression",
       "call",
       "builtin",
+      "saturate"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "expression",
+      "call",
+      "builtin",
       "select"
     ]
   },
@@ -2296,7 +2702,81 @@ export const listing = [
       "execution",
       "expression",
       "unary",
+      "bool_logical"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "expression",
+      "unary",
       "f32_arithmetic"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "expression",
+      "unary",
+      "i32_arithmetic"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "flow_control",
+      "call"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "flow_control",
+      "for"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "flow_control",
+      "if"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "flow_control",
+      "loop"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "flow_control",
+      "return"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "flow_control",
+      "switch"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "flow_control",
+      "while"
     ]
   },
   {
@@ -2335,6 +2815,13 @@ export const listing = [
     "file": [
       "shader",
       "execution",
+      "padding"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
       "robust_access"
     ]
   },
@@ -2343,14 +2830,6 @@ export const listing = [
       "shader",
       "execution",
       "robust_access_vertex"
-    ]
-  },
-  {
-    "file": [
-      "shader",
-      "execution",
-      "sampling",
-      "gradients_in_varying_loop"
     ]
   },
   {
@@ -2394,6 +2873,38 @@ export const listing = [
     "file": [
       "shader",
       "validation",
+      "const_assert",
+      "const_assert"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "parse",
+      "align"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "parse",
+      "attribute"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "parse",
+      "binary_ops"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
       "parse",
       "blankspace"
     ]
@@ -2403,7 +2914,47 @@ export const listing = [
       "shader",
       "validation",
       "parse",
+      "break"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "parse",
+      "builtin"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "parse",
       "comments"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "parse",
+      "const"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "parse",
+      "const_assert"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "parse",
+      "discard"
     ]
   },
   {
@@ -2427,7 +2978,31 @@ export const listing = [
       "shader",
       "validation",
       "parse",
+      "pipeline_stage"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "parse",
+      "semicolon"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "parse",
       "source"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "parse",
+      "unary_ops"
     ]
   },
   {
@@ -2442,8 +3017,24 @@ export const listing = [
     "file": [
       "shader",
       "validation",
+      "resource_interface",
+      "bindings"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
       "shader_io",
       "builtins"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "shader_io",
+      "entry_point"
     ]
   },
   {
@@ -2468,14 +3059,6 @@ export const listing = [
       "validation",
       "shader_io",
       "locations"
-    ]
-  },
-  {
-    "file": [
-      "shader",
-      "validation",
-      "shader_io",
-      "shareable_types"
     ]
   },
   {
@@ -2530,7 +3113,7 @@ export const listing = [
     "file": [
       "web_platform",
       "canvas",
-      "getPreferredFormat"
+      "getPreferredCanvasFormat"
     ]
   },
   {
@@ -2587,7 +3170,7 @@ export const listing = [
       "web_platform",
       "reftests"
     ],
-    "readme": "Reference tests (reftests) for WebGPU canvas presentation.\n\nThese render some contents to a canvas using WebGPU, and WPT compares the rendering result with\nthe \"reference\" versions (in `ref/`) which render with 2D canvas.\n\nThis tests things like:\n- The canvas has the correct orientation.\n- The canvas renders with the correct transfer function.\n- The canvas blends and interpolates in the correct color encoding.\n\nTODO(#918): Test all possible color spaces (once we have more than 1)\nTODO(#921): Why is there sometimes a difference of 1 (e.g. 3f vs 40) in canvas_size_different_with_back_buffer_size?\nAnd why does chromium's image_diff show diffs on other pixels that don't seem to have diffs?\nTODO(#1093): Test rgba16float values which are out of gamut of the canvas but under SDR luminance.\nTODO(#1093): Test rgba16float values which are above SDR luminance.\nTODO(#1116): Test canvas scaling."
+    "readme": "Reference tests (reftests) for WebGPU canvas presentation.\n\nThese render some contents to a canvas using WebGPU, and WPT compares the rendering result with\nthe \"reference\" versions (in `ref/`) which render with 2D canvas.\n\nThis tests things like:\n- The canvas has the correct orientation.\n- The canvas renders with the correct transfer function.\n- The canvas blends and interpolates in the correct color encoding.\n\nTODO(#918): Test all possible color spaces (once we have more than 1)\nTODO(#921): Why is there sometimes a difference of 1 (e.g. 3f vs 40) in canvas_size_different_with_back_buffer_size?\nAnd why does chromium's image_diff show diffs on other pixels that don't seem to have diffs?\nTODO(#1093): Test rgba16float values which are out of gamut of the canvas but under SDR luminance.\nTODO(#1093): Test rgba16float values which are above SDR luminance.\nTODO(#1116): Test canvas scaling.\nTODO: Test transferControlToOffscreen, used from {the same,another} thread"
   },
   {
     "file": [

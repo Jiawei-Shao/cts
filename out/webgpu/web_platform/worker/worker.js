@@ -14,35 +14,35 @@ async function basicTest() {
     compute: {
       module: device.createShaderModule({
         code: `
-          struct Buffer { data: array<u32>; };
+          struct Buffer { data: array<u32>, };
 
           @group(0) @binding(0) var<storage, read_write> buffer: Buffer;
           @compute @workgroup_size(1u) fn main(
               @builtin(global_invocation_id) id: vec3<u32>) {
             buffer.data[id.x] = id.x + ${kOffset}u;
           }
-        ` }),
-
-      entryPoint: 'main' } });
-
-
+        `
+      }),
+      entryPoint: 'main'
+    }
+  });
 
   const kNumElements = 64;
   const kBufferSize = kNumElements * 4;
   const buffer = device.createBuffer({
     size: kBufferSize,
-    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
-
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+  });
 
   const resultBuffer = device.createBuffer({
     size: kBufferSize,
-    usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
-
+    usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
+  });
 
   const bindGroup = device.createBindGroup({
     layout: pipeline.getBindGroupLayout(0),
-    entries: [{ binding: 0, resource: { buffer } }] });
-
+    entries: [{ binding: 0, resource: { buffer } }]
+  });
 
   const encoder = device.createCommandEncoder();
 

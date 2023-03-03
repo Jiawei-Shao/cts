@@ -58,7 +58,6 @@ export class ValidationTest extends GPUTest {
           ...descriptor,
           usage: descriptor.usage | GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_SRC,
         });
-
         void this.device.popErrorScope();
         return buffer;
       }
@@ -171,7 +170,6 @@ export class ValidationTest extends GPUTest {
       format: 'rgba8unorm',
       usage: GPUTextureUsage.TEXTURE_BINDING,
     });
-
     void this.device.popErrorScope();
     return texture;
   }
@@ -185,7 +183,7 @@ export class ValidationTest extends GPUTest {
   }
 
   /**
-   * Return an arbitrary object of the specified {@link BindableResource} type
+   * Return an arbitrary object of the specified {@link webgpu/capability_info!BindableResource} type
    * (e.g. `'errorBuf'`, `'nonFiltSamp'`, `sampledTexMS`, etc.)
    */
   getBindingResource(bindingType) {
@@ -306,26 +304,22 @@ export class ValidationTest extends GPUTest {
   }
 
   /** Return a GPURenderPipeline with default options and no-op vertex and fragment shaders. */
-  createNoOpRenderPipeline() {
+  createNoOpRenderPipeline(layout = 'auto') {
     return this.device.createRenderPipeline({
-      layout: 'auto',
+      layout,
       vertex: {
         module: this.device.createShaderModule({
           code: this.getNoOpShaderCode('VERTEX'),
         }),
-
         entryPoint: 'main',
       },
-
       fragment: {
         module: this.device.createShaderModule({
           code: this.getNoOpShaderCode('FRAGMENT'),
         }),
-
         entryPoint: 'main',
         targets: [{ format: 'rgba8unorm', writeMask: 0 }],
       },
-
       primitive: { topology: 'triangle-list' },
     });
   }
@@ -339,11 +333,9 @@ export class ValidationTest extends GPUTest {
         module: this.device.createShaderModule({
           code: '',
         }),
-
         entryPoint: '',
       },
     });
-
     void this.device.popErrorScope();
     return pipeline;
   }
@@ -356,7 +348,6 @@ export class ValidationTest extends GPUTest {
         module: this.device.createShaderModule({
           code: this.getNoOpShaderCode('COMPUTE'),
         }),
-
         entryPoint: 'main',
       },
     });
@@ -371,12 +362,61 @@ export class ValidationTest extends GPUTest {
         module: this.device.createShaderModule({
           code: '',
         }),
-
         entryPoint: '',
       },
     });
-
     void this.device.popErrorScope();
     return pipeline;
+  }
+
+  /** Return an invalid GPUShaderModule. */
+  createInvalidShaderModule() {
+    this.device.pushErrorScope('validation');
+    const code = 'deadbeaf'; // Something make no sense
+    const shaderModule = this.device.createShaderModule({ code });
+    void this.device.popErrorScope();
+    return shaderModule;
+  }
+
+  /** Helper for testing createRenderPipeline(Async) validation */
+  doCreateRenderPipelineTest(isAsync, _success, descriptor, errorTypeName = 'GPUPipelineError') {
+    if (isAsync) {
+      if (_success) {
+        this.shouldResolve(this.device.createRenderPipelineAsync(descriptor));
+      } else {
+        this.shouldReject(errorTypeName, this.device.createRenderPipelineAsync(descriptor));
+      }
+    } else {
+      if (errorTypeName === 'GPUPipelineError') {
+        this.expectValidationError(() => {
+          this.device.createRenderPipeline(descriptor);
+        }, !_success);
+      } else {
+        this.shouldThrow(_success ? false : errorTypeName, () => {
+          this.device.createRenderPipeline(descriptor);
+        });
+      }
+    }
+  }
+
+  /** Helper for testing createComputePipeline(Async) validation */
+  doCreateComputePipelineTest(isAsync, _success, descriptor, errorTypeName = 'GPUPipelineError') {
+    if (isAsync) {
+      if (_success) {
+        this.shouldResolve(this.device.createComputePipelineAsync(descriptor));
+      } else {
+        this.shouldReject(errorTypeName, this.device.createComputePipelineAsync(descriptor));
+      }
+    } else {
+      if (errorTypeName === 'GPUPipelineError') {
+        this.expectValidationError(() => {
+          this.device.createComputePipeline(descriptor);
+        }, !_success);
+      } else {
+        this.shouldThrow(_success ? false : errorTypeName, () => {
+          this.device.createComputePipeline(descriptor);
+        });
+      }
+    }
   }
 }

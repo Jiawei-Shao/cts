@@ -27,7 +27,7 @@ export class ShaderValidationTest extends GPUTest {
 
     const error = new ErrorWithExtra('', () => ({ shaderModule }));
     this.eventualAsyncExpectation(async () => {
-      const compilationInfo = await shaderModule.compilationInfo();
+      const compilationInfo = await shaderModule.getCompilationInfo();
 
       // MAINTENANCE_TODO: Pretty-print error messages with source context.
       const messagesLog = compilationInfo.messages
@@ -63,8 +63,12 @@ export class ShaderValidationTest extends GPUTest {
    * t.wrapInEntryPoint(`var i = 0;`);
    * ```
    */
-  wrapInEntryPoint(code) {
+  wrapInEntryPoint(code, enabledExtensions = []) {
+    const enableDirectives = enabledExtensions.map(x => `enable ${x};`).join('\n      ');
+
     return `
+      ${enableDirectives}
+
       @compute @workgroup_size(1)
       fn main() {
         ${code}

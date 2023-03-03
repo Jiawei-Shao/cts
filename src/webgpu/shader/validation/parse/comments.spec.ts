@@ -25,6 +25,18 @@ parameters
     t.expectCompileResult(true, code);
   });
 
+g.test('line_comment_eof')
+  .desc(`Test that line comments can come at EOF.`)
+  .fn(t => {
+    const code = `
+@fragment
+fn main() -> @location(0) vec4<f32> {
+  return vec4<f32>(.4, .2, .3, .1);
+}
+// line comments are OK at EOF...`;
+    t.expectCompileResult(true, code);
+  });
+
 g.test('line_comment_terminators')
   .desc(`Test that line comments are terminated by any blankspace other than space and \t`)
   .params(u =>
@@ -44,7 +56,7 @@ g.test('line_comment_terminators')
       .beginSubcases()
   )
   .fn(t => {
-    const code = `// Line comment${t.params.blankspace[0]}let invalid_outside_comment = should_fail`;
+    const code = `// Line comment${t.params.blankspace[0]}const invalid_outside_comment = should_fail`;
 
     t.expectCompileResult([' ', '\t'].includes(t.params.blankspace[0]), code);
   });

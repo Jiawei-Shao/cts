@@ -17,7 +17,7 @@ export const checkContentsByBufferCopy: CheckContents = (
     t.expectSingleColor(texture, format, {
       size: [t.textureWidth, t.textureHeight, t.textureDepth],
       dimension: params.dimension,
-      slice: layer,
+      slice: params.dimension === '2d' ? layer : 0,
       layout: { mipLevel, aspect: params.aspect },
       exp: t.stateToTexelComponents[state],
     });
@@ -47,6 +47,7 @@ export const checkContentsByTextureCopy: CheckContents = (
       format: params.format,
       usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,
     });
+    t.trackForCleanup(dst);
 
     const commandEncoder = t.device.createCommandEncoder();
     commandEncoder.copyTextureToTexture(

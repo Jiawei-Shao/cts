@@ -65,8 +65,8 @@ have unexpected values then get drawn to the color buffer, which is later checke
       var<private> kDepths: array<f32, ${kNumDepthValues}> = array<f32, ${kNumDepthValues}>(
           -1.0, -0.5, 0.0, 0.25, 0.75, 1.0, 1.5, 2.0);
 
-      let vpMin: f32 = ${kViewportMinDepth};
-      let vpMax: f32 = ${kViewportMaxDepth};
+      const vpMin: f32 = ${kViewportMinDepth};
+      const vpMax: f32 = ${kViewportMaxDepth};
 
       // Draw the points in a straight horizontal row, one per pixel.
       fn vertexX(idx: u32) -> f32 {
@@ -177,7 +177,7 @@ have unexpected values then get drawn to the color buffer, which is later checke
         topology: 'point-list',
         unclippedDepth,
       },
-      depthStencil: { format, depthWriteEnabled: true },
+      depthStencil: { format, depthWriteEnabled: true, depthCompare: 'always' },
       multisample: multisampled ? { count: 4 } : undefined,
       fragment: {
         module,
@@ -364,7 +364,7 @@ to be empty.`
       info.feature,
     ]);
   })
-  .fn(async t => {
+  .fn(t => {
     const { format, unclippedDepth, multisampled } = t.params;
     const info = kTextureFormatInfo[format];
 
@@ -377,8 +377,8 @@ to be empty.`
       var<private> kDepths: array<f32, ${kNumDepthValues}> = array<f32, ${kNumDepthValues}>(
           -1.0, -0.5, 0.0, 0.25, 0.75, 1.0, 1.5, 2.0);
 
-      let vpMin: f32 = ${kViewportMinDepth};
-      let vpMax: f32 = ${kViewportMaxDepth};
+      const vpMin: f32 = ${kViewportMinDepth};
+      const vpMax: f32 = ${kViewportMaxDepth};
 
       // Draw the points in a straight horizontal row, one per pixel.
       fn vertexX(idx: u32) -> f32 {
@@ -426,7 +426,7 @@ to be empty.`
       layout: 'auto',
       vertex: { module, entryPoint: 'vmain' },
       primitive: { topology: 'point-list' },
-      depthStencil: { format, depthWriteEnabled: true },
+      depthStencil: { format, depthWriteEnabled: true, depthCompare: 'always' },
       multisample: multisampled ? { count: 4 } : undefined,
       fragment: { module, entryPoint: 'finit', targets: [] },
     });
@@ -440,7 +440,7 @@ to be empty.`
         topology: 'point-list',
         unclippedDepth,
       },
-      depthStencil: { format, depthCompare: 'not-equal' },
+      depthStencil: { format, depthCompare: 'not-equal', depthWriteEnabled: false },
       multisample: multisampled ? { count: 4 } : undefined,
       fragment: { module, entryPoint: 'ftest', targets: [{ format: 'r8unorm' }] },
     });

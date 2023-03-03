@@ -78,20 +78,16 @@ function makeTestPipeline(test, buffers) {
       module: test.device.createShaderModule({
         code: test.getNoOpShaderCode('VERTEX'),
       }),
-
       entryPoint: 'main',
       buffers: bufferLayouts,
     },
-
     fragment: {
       module: test.device.createShaderModule({
         code: test.getNoOpShaderCode('FRAGMENT'),
       }),
-
       entryPoint: 'main',
       targets: [{ format: 'rgba8unorm', writeMask: 0 }],
     },
-
     primitive: { topology: 'triangle-list' },
   });
 }
@@ -115,7 +111,6 @@ function makeTestPipelineWithVertexAndInstanceBuffer(
         },
       ],
     },
-
     {
       slot: 7,
       stepMode: 'instance',
@@ -182,7 +177,7 @@ In this test we test that a small buffer bound to unused buffer slot won't cause
       .combine('bufferOffset', [0, 4])
       .combine('boundSize', [0, 1])
   )
-  .fn(async t => {
+  .fn(t => {
     const {
       smallIndexBuffer,
       smallVertexBuffer,
@@ -237,14 +232,12 @@ In this test we test that a small buffer bound to unused buffer slot won't cause
             ...kDefaultParameterForDraw,
             ...kDefaultParameterForNonIndexedDraw,
           };
-
           callDraw(t, renderEncoder, drawType, drawParam);
         } else {
           const drawParam = {
             ...kDefaultParameterForDraw,
             ...kDefaultParameterForIndexedDraw,
           };
-
           callDrawIndexed(t, renderEncoder, drawType, drawParam);
         }
 
@@ -275,7 +268,7 @@ drawIndexedIndirect as it is GPU-validated.
       .beginSubcases()
       .combine('indexFormat', ['uint16', 'uint32'])
   )
-  .fn(async t => {
+  .fn(t => {
     const {
       indexFormat,
       bindingSizeInElements,
@@ -292,7 +285,6 @@ drawIndexedIndirect as it is GPU-validated.
       size: bufferSize,
       usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
     };
-
     const indexBuffer = t.createBufferWithState('valid', desc);
 
     const drawCallParam = {
@@ -370,33 +362,40 @@ success/error as expected. Such set of buffer parameters should include cases li
   )
   .params(u =>
     u
-      .combine('drawType', ['draw', 'drawIndexed', 'drawIndirect', 'drawIndexedIndirect'])
-      .combine('boundVertexBufferSizeState', ['zero', 'exile', 'enough'])
-      .combine('boundInstanceBufferSizeState', ['zero', 'exile', 'enough'])
-      .combine('zeroVertexStrideCount', [false, true])
-      .combine('zeroInstanceStrideCount', [false, true])
-      .combine('arrayStrideState', ['zero', 'exact', 'oversize'])
-      .combine('attributeOffsetFactor', [0, 1, 2, 7]) // the offset of attribute will be factor * MIN(4, sizeof(vertexFormat))
+      // type of draw call
+      .combine('type', ['draw', 'drawIndexed', 'drawIndirect', 'drawIndexedIndirect'])
+      // the state of vertex step mode vertex buffer bound size
+      .combine('VBSize', ['zero', 'exile', 'enough'])
+      // the state of instance step mode vertex buffer bound size
+      .combine('IBSize', ['zero', 'exile', 'enough'])
+      // should the vertex stride count be zero
+      .combine('VStride0', [false, true])
+      // should the instance stride count be zero
+      .combine('IStride0', [false, true])
+      // the state of array stride
+      .combine('AStride', ['zero', 'exact', 'oversize'])
+      // the factor for offset of attributes in vertex layout
+      .combine('offset', [0, 1, 2, 7]) // the offset of attribute will be factor * MIN(4, sizeof(vertexFormat))
       .beginSubcases()
       .combine('setBufferOffset', [0, 200]) // must be a multiple of 4
       .combine('attributeFormat', ['snorm8x2', 'float32', 'float16x4'])
       .combine('vertexCount', [0, 1, 10000])
       .combine('firstVertex', [0, 10000])
-      .filter(p => p.zeroVertexStrideCount === (p.firstVertex + p.vertexCount === 0))
+      .filter(p => p.VStride0 === (p.firstVertex + p.vertexCount === 0))
       .combine('instanceCount', [0, 1, 10000])
       .combine('firstInstance', [0, 10000])
-      .filter(p => p.zeroInstanceStrideCount === (p.firstInstance + p.instanceCount === 0))
+      .filter(p => p.IStride0 === (p.firstInstance + p.instanceCount === 0))
       .unless(p => p.vertexCount === 10000 && p.instanceCount === 10000)
   )
-  .fn(async t => {
+  .fn(t => {
     const {
-      drawType,
-      boundVertexBufferSizeState,
-      boundInstanceBufferSizeState,
-      zeroVertexStrideCount,
-      zeroInstanceStrideCount,
-      arrayStrideState,
-      attributeOffsetFactor,
+      type: drawType,
+      VBSize: boundVertexBufferSizeState,
+      IBSize: boundInstanceBufferSizeState,
+      VStride0: zeroVertexStrideCount,
+      IStride0: zeroInstanceStrideCount,
+      AStride: arrayStrideState,
+      offset: attributeOffsetFactor,
       setBufferOffset,
       attributeFormat,
       vertexCount,
@@ -465,7 +464,6 @@ success/error as expected. Such set of buffer parameters should include cases li
       size: vertexBufferSize,
       usage: GPUBufferUsage.VERTEX,
     });
-
     const instanceBuffer = t.createBufferWithState('valid', {
       size: instanceBufferSize,
       usage: GPUBufferUsage.VERTEX,
@@ -513,7 +511,6 @@ success/error as expected. Such set of buffer parameters should include cases li
             size: indexBufferSize,
             usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
           };
-
           const indexBuffer = t.createBufferWithState('valid', desc);
 
           const drawParam = {
@@ -560,7 +557,7 @@ buffer slot and index buffer will cause no validation error, with completely/par
       .combine('indexBoundOffestFactor', [0, 0.5, 1, 1.5, 2])
       .combine('arrayStrideState', ['zero', 'exact', 'oversize'])
   )
-  .fn(async t => {
+  .fn(t => {
     const {
       drawType,
       vertexBoundOffestFactor,
@@ -671,14 +668,12 @@ buffer slot and index buffer will cause no validation error, with completely/par
             ...kDefaultParameterForDraw,
             ...kDefaultParameterForNonIndexedDraw,
           };
-
           callDraw(t, renderEncoder, drawType, drawParam);
         } else {
           const drawParam = {
             ...kDefaultParameterForDraw,
             ...kDefaultParameterForIndexedDraw,
           };
-
           callDrawIndexed(t, renderEncoder, drawType, drawParam);
         }
 
@@ -698,3 +693,135 @@ In this test we test that only the last setting for a buffer slot take account.
 `
   )
   .unimplemented();
+
+g.test(`max_draw_count`)
+  .desc(
+    `
+In this test we test that draw count which exceeds
+GPURenderPassDescriptor.maxDrawCount causes validation error on
+GPUCommandEncoder.finish(). The test sets specified maxDrawCount,
+calls specified draw call specified times with or without bundles,
+and checks whether GPUCommandEncoder.finish() causes a validation error.
+    - x= whether to use a bundle for the first half of the draw calls
+    - x= whether to use a bundle for the second half of the draw calls
+    - x= several different draw counts
+    - x= several different maxDrawCounts
+`
+  )
+  .params(u =>
+    u
+      .combine('bundleFirstHalf', [false, true])
+      .combine('bundleSecondHalf', [false, true])
+      .combine('maxDrawCount', [0, 1, 4, 16])
+      .beginSubcases()
+      .expand('drawCount', p => new Set([0, p.maxDrawCount, p.maxDrawCount + 1]))
+  )
+  .fn(t => {
+    const { bundleFirstHalf, bundleSecondHalf, maxDrawCount, drawCount } = t.params;
+
+    const colorFormat = 'rgba8unorm';
+    const colorTexture = t.device.createTexture({
+      size: { width: 1, height: 1, depthOrArrayLayers: 1 },
+      format: colorFormat,
+      mipLevelCount: 1,
+      sampleCount: 1,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+
+    const pipeline = t.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: t.device.createShaderModule({
+          code: `
+            @vertex fn main() -> @builtin(position) vec4<f32> {
+              return vec4<f32>();
+            }
+          `,
+        }),
+        entryPoint: 'main',
+      },
+      fragment: {
+        module: t.device.createShaderModule({
+          code: `@fragment fn main() {}`,
+        }),
+        entryPoint: 'main',
+        targets: [{ format: colorFormat, writeMask: 0 }],
+      },
+    });
+
+    const indexBuffer = t.makeBufferWithContents(new Uint16Array([0, 0, 0]), GPUBufferUsage.INDEX);
+    const indirectBuffer = t.makeBufferWithContents(
+      new Uint32Array([3, 1, 0, 0]),
+      GPUBufferUsage.INDIRECT
+    );
+
+    const indexedIndirectBuffer = t.makeBufferWithContents(
+      new Uint32Array([3, 1, 0, 0, 0]),
+      GPUBufferUsage.INDIRECT
+    );
+
+    const commandEncoder = t.device.createCommandEncoder();
+    const renderPassEncoder = commandEncoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: colorTexture.createView(),
+          loadOp: 'clear',
+          storeOp: 'store',
+        },
+      ],
+
+      maxDrawCount,
+    });
+
+    const firstHalfEncoder = bundleFirstHalf
+      ? t.device.createRenderBundleEncoder({
+          colorFormats: [colorFormat],
+        })
+      : renderPassEncoder;
+
+    const secondHalfEncoder = bundleSecondHalf
+      ? t.device.createRenderBundleEncoder({
+          colorFormats: [colorFormat],
+        })
+      : renderPassEncoder;
+
+    firstHalfEncoder.setPipeline(pipeline);
+    firstHalfEncoder.setIndexBuffer(indexBuffer, 'uint16');
+    secondHalfEncoder.setPipeline(pipeline);
+    secondHalfEncoder.setIndexBuffer(indexBuffer, 'uint16');
+
+    const halfDrawCount = Math.floor(drawCount / 2);
+    for (let i = 0; i < drawCount; i++) {
+      const encoder = i < halfDrawCount ? firstHalfEncoder : secondHalfEncoder;
+      if (i % 4 === 0) {
+        encoder.draw(3);
+      }
+      if (i % 4 === 1) {
+        encoder.drawIndexed(3);
+      }
+      if (i % 4 === 2) {
+        encoder.drawIndirect(indirectBuffer, 0);
+      }
+      if (i % 4 === 3) {
+        encoder.drawIndexedIndirect(indexedIndirectBuffer, 0);
+      }
+    }
+
+    const bundles = [];
+    if (bundleFirstHalf) {
+      bundles.push(firstHalfEncoder.finish());
+    }
+    if (bundleSecondHalf) {
+      bundles.push(secondHalfEncoder.finish());
+    }
+
+    if (bundles.length > 0) {
+      renderPassEncoder.executeBundles(bundles);
+    }
+
+    renderPassEncoder.end();
+
+    t.expectValidationError(() => {
+      commandEncoder.finish();
+    }, drawCount > maxDrawCount);
+  });

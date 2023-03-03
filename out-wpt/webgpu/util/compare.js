@@ -1,75 +1,29 @@
 /**
  * AUTO-GENERATED - DO NOT EDIT. Source: https://github.com/gpuweb/cts
- **/ import { Colors } from '../../common/util/colors.js';
-import { f32, isFloatValue, Scalar, Vector } from './conversion.js';
+ **/ import { getIsBuildingDataCache } from '../../common/framework/data_cache.js';
+import { Colors } from '../../common/util/colors.js';
+import { assert } from '../../common/util/util.js';
+import {
+  deserializeExpectation,
+  serializeExpectation,
+} from '../shader/execution/expression/case_cache.js';
+import { toComparator } from '../shader/execution/expression/expression.js';
 
-import { correctlyRounded, oneULP, withinULP } from './math.js';
+import { isFloatValue, Matrix, Scalar, Vector } from './conversion.js';
+import { F32Interval } from './f32_interval.js';
 
 /** Comparison describes the result of a Comparator function. */
 
 /**
- * @returns a FloatMatch that returns true iff the two numbers are equal to, or
- * less than the specified absolute error threshold.
- */
-export function absMatch(diff) {
-  return (got, expected) => {
-    if (got === expected) {
-      return true;
-    }
-    if (!Number.isFinite(got) || !Number.isFinite(expected)) {
-      return false;
-    }
-    return Math.abs(got - expected) <= diff;
-  };
-}
-
-/**
- * @returns a FloatMatch that returns true iff the two numbers are within or
- * equal to the specified ULP threshold value.
- */
-export function ulpMatch(ulp) {
-  return (got, expected) => {
-    if (got === expected) {
-      return true;
-    }
-    return withinULP(got, expected, ulp);
-  };
-}
-
-/**
- * @returns a FloatMatch that returns true iff |expected| is a correctly round
- * to |got|.
- * |got| must be expressible as a float32.
- */
-export function correctlyRoundedMatch() {
-  return (got, expected) => {
-    return correctlyRounded(f32(got), expected);
-  };
-}
-
-/**
- * @returns a FloatMatch that return true iff |got| is contained in the interval |i|.
- *
- * The standard |expected| parameter is ignored.
- *
- * NB: This will be removed at the end of transition to the new FP testing framework.
- *
- * @param i interval to test the |got| value against.
- */
-export function intervalMatch(i) {
-  return (got, _) => {
-    return i.contains(got);
-  };
-}
-
-/**
- * compare() compares 'got' to 'expected', returning the Comparison information.
- * @param got the value obtained from the test
- * @param expected the expected value
- * @param cmpFloats the FloatMatch used to compare floating point values
+ * compares 'got' Value  to 'expected' Value, returning the Comparison information.
+ * @param got the Value obtained from the test
+ * @param expected the expected Value
  * @returns the comparison results
  */
-export function compare(got, expected, cmpFloats) {
+// NOTE: This function does not use objectEquals, since that does not handle FP
+// specific corners cases correctly, i.e. that f64/f32/f16 are all considered
+// the same type for this comparison.
+function compareValue(got, expected) {
   {
     // Check types
     const gTy = got.type;
@@ -88,59 +42,258 @@ export function compare(got, expected, cmpFloats) {
     const g = got;
     const e = expected;
     const isFloat = g.type.kind === 'f64' || g.type.kind === 'f32' || g.type.kind === 'f16';
-    const matched = (isFloat && cmpFloats(g.value, e.value)) || (!isFloat && g.value === e.value);
+    const matched = (isFloat && g.value === e.value) || (!isFloat && g.value === e.value);
     return {
       matched,
       got: g.toString(),
       expected: matched ? Colors.green(e.toString()) : Colors.red(e.toString()),
     };
   }
+
   if (got instanceof Vector) {
+    const e = expected;
     const gLen = got.elements.length;
-    const eLen = expected.elements.length;
+    const eLen = e.elements.length;
     let matched = gLen === eLen;
-    const gElements = new Array(gLen);
-    const eElements = new Array(eLen);
-    for (let i = 0; i < Math.max(gLen, eLen); i++) {
-      if (i < gLen && i < eLen) {
-        const g = got.elements[i];
-        const e = expected.elements[i];
-        const cmp = compare(g, e, cmpFloats);
-        matched = matched && cmp.matched;
-        gElements[i] = cmp.got;
-        eElements[i] = cmp.expected;
-        continue;
-      }
-      matched = false;
-      if (i < gLen) {
-        gElements[i] = got.elements[i].toString();
-      }
-      if (i < eLen) {
-        eElements[i] = expected.elements[i].toString();
-      }
+    if (matched) {
+      // Iterating and calling compare instead of just using objectEquals to use the FP specific logic from above
+      matched = got.elements.every((_, i) => {
+        return compare(got.elements[i], e.elements[i]).matched;
+      });
     }
+
     return {
       matched,
-      got: `${got.type}(${gElements.join(', ')})`,
-      expected: `${expected.type}(${eElements.join(', ')})`,
+      got: `${got.toString()}`,
+      expected: matched ? Colors.green(e.toString()) : Colors.red(e.toString()),
     };
   }
+
+  if (got instanceof Matrix) {
+    const e = expected;
+    const gCols = got.type.cols;
+    const eCols = e.type.cols;
+    const gRows = got.type.rows;
+    const eRows = e.type.rows;
+    let matched = gCols === eCols && gRows === eRows;
+    if (matched) {
+      // Iterating and calling compare instead of just using objectEquals to use the FP specific logic from above
+      matched = got.elements.every((c, i) => {
+        return c.every((_, j) => {
+          return compare(got.elements[i][j], e.elements[i][j]).matched;
+        });
+      });
+    }
+
+    return {
+      matched,
+      got: `${got.toString()}`,
+      expected: matched ? Colors.green(e.toString()) : Colors.red(e.toString()),
+    };
+  }
+
   throw new Error(`unhandled type '${typeof got}`);
+}
+
+/**
+ * Tests it a 'got' Value is contained in 'expected' interval, returning the Comparison information.
+ * @param got the Value obtained from the test
+ * @param expected the expected F32Interval
+ * @returns the comparison results
+ */
+function compareInterval(got, expected) {
+  {
+    // Check type
+    const gTy = got.type;
+    if (!isFloatValue(got)) {
+      return {
+        matched: false,
+        got: `${Colors.red(gTy.toString())}(${got})`,
+        expected: `floating point value`,
+      };
+    }
+  }
+
+  if (got instanceof Scalar) {
+    const g = got.value;
+    const matched = expected.contains(g);
+    return {
+      matched,
+      got: g.toString(),
+      expected: matched ? Colors.green(expected.toString()) : Colors.red(expected.toString()),
+    };
+  }
+
+  // Vector results are currently not handled
+  throw new Error(`unhandled type '${typeof got}`);
+}
+
+/**
+ * Tests it a 'got' Value is contained in 'expected' vector, returning the Comparison information.
+ * @param got the Value obtained from the test, is expected to be a Vector
+ * @param expected the expected array of F32Intervals, one for each element of the vector
+ * @returns the comparison results
+ */
+function compareVector(got, expected) {
+  // Check got type
+  if (!(got instanceof Vector)) {
+    return {
+      matched: false,
+      got: `${Colors.red((typeof got).toString())}(${got})`,
+      expected: `Vector`,
+    };
+  }
+
+  // Check element type
+  {
+    const gTy = got.type.elementType;
+    if (!isFloatValue(got.elements[0])) {
+      return {
+        matched: false,
+        got: `${Colors.red(gTy.toString())}(${got})`,
+        expected: `floating point elements`,
+      };
+    }
+  }
+
+  if (got.elements.length !== expected.length) {
+    return {
+      matched: false,
+      got: `Vector of ${got.elements.length} elements`,
+      expected: `${expected.length} elements`,
+    };
+  }
+
+  const results = got.elements.map((_, idx) => {
+    const g = got.elements[idx].value;
+    return { match: expected[idx].contains(g), index: idx };
+  });
+
+  const failures = results.filter(v => !v.match).map(v => v.index);
+  if (failures.length !== 0) {
+    const expected_string = expected.map((v, idx) =>
+      idx in failures ? Colors.red(`[${v}]`) : Colors.green(`[${v}]`)
+    );
+
+    return {
+      matched: false,
+      got: `[${got.elements}]`,
+      expected: `[${expected_string}]`,
+    };
+  }
+
+  return {
+    matched: true,
+    got: `[${got.elements}]`,
+    expected: `[${Colors.green(expected.toString())}]`,
+  };
+}
+
+// Utility to get arround not being able to nest `` blocks
+function convertArrayToString(m) {
+  return `[${m.join(',')}]`;
+}
+
+/**
+ * Tests it a 'got' Value is contained in 'expected' matrix, returning the Comparison information.
+ * @param got the Value obtained from the test, is expected to be a Matrix
+ * @param expected the expected array of array of F32Intervals, representing a column-major matrix
+ * @returns the comparison results
+ */
+function compareMatrix(got, expected) {
+  // Check got type
+  if (!(got instanceof Matrix)) {
+    return {
+      matched: false,
+      got: `${Colors.red((typeof got).toString())}(${got})`,
+      expected: `Matrix`,
+    };
+  }
+
+  // Check element type
+  {
+    const gTy = got.type.elementType;
+    if (!isFloatValue(got.elements[0][0])) {
+      return {
+        matched: false,
+        got: `${Colors.red(gTy.toString())}(${got})`,
+        expected: `floating point elements`,
+      };
+    }
+  }
+
+  // Check matrix dimensions
+  {
+    const gCols = got.elements.length;
+    const gRows = got.elements[0].length;
+    const eCols = expected.length;
+    const eRows = expected[0].length;
+
+    if (gCols !== eCols || gRows !== eRows) {
+      assert(false);
+      return {
+        matched: false,
+        got: `Matrix of ${gCols}x${gRows} elements`,
+        expected: `Matrix of ${eCols}x${eRows} elements`,
+      };
+    }
+  }
+
+  // Check that got values fall in expected intervals
+  let matched = true;
+  const expected_strings = [...Array(got.elements.length)].map(_ => [
+    ...Array(got.elements[0].length),
+  ]);
+
+  got.elements.forEach((c, i) => {
+    c.forEach((r, j) => {
+      const g = r.value;
+      if (expected[i][j].contains(g)) {
+        expected_strings[i][j] = Colors.green(`[${expected[i][j]}]`);
+      } else {
+        matched = false;
+        expected_strings[i][j] = Colors.red(`[${expected[i][j]}]`);
+      }
+    });
+  });
+
+  return {
+    matched,
+    got: convertArrayToString(got.elements.map(convertArrayToString)),
+    expected: convertArrayToString(expected_strings.map(convertArrayToString)),
+  };
+}
+
+/**
+ * compare() compares 'got' to 'expected', returning the Comparison information.
+ * @param got the result obtained from the test
+ * @param expected the expected result
+ * @returns the comparison results
+ */
+export function compare(got, expected) {
+  if (expected instanceof Array) {
+    if (expected[0] instanceof Array) {
+      expected = expected;
+      return compareMatrix(got, expected);
+    } else {
+      expected = expected;
+      return compareVector(got, expected);
+    }
+  }
+
+  if (expected instanceof F32Interval) {
+    return compareInterval(got, expected);
+  }
+
+  return compareValue(got, expected);
 }
 
 /** @returns a Comparator that checks whether a test value matches any of the provided options */
 export function anyOf(...expectations) {
-  return (got, cmpFloats) => {
+  const comparator = got => {
     const failed = new Set();
     for (const e of expectations) {
-      let cmp;
-      if (e.type !== undefined) {
-        const v = e;
-        cmp = compare(got, v, cmpFloats);
-      } else {
-        const c = e;
-        cmp = c(got, cmpFloats);
-      }
+      const cmp = toComparator(e)(got);
       if (cmp.matched) {
         return cmp;
       }
@@ -148,47 +301,54 @@ export function anyOf(...expectations) {
     }
     return { matched: false, got: got.toString(), expected: [...failed].join(' or ') };
   };
+
+  if (getIsBuildingDataCache()) {
+    // If there's an active DataCache, and it supports storing, then append the
+    // comparator kind and serialized expectations to the comparator, so it can
+    // be serialized.
+    comparator.kind = 'anyOf';
+    comparator.data = expectations.map(e => serializeExpectation(e));
+  }
+  return comparator;
 }
 
-/** @returns a Comparator that checks whether a result is within N * ULP of a target value, where N is defined by a function
- *
- * N is n(x), where x is the input into the function under test, not the result of the function.
- * For a function f(x) = X that is being tested, the acceptance interval is defined as within X +/- n(x) * ulp(X).
- */
-export function ulpComparator(x, target, n) {
-  const c = n(x);
-  const match = ulpMatch(c);
-  return (got, _) => {
-    const cmp = compare(got, target, match);
-    if (cmp.matched) {
-      return cmp;
+/** @returns a Comparator that skips the test if the expectation is undefined */
+export function skipUndefined(expectation) {
+  const comparator = got => {
+    if (expectation !== undefined) {
+      return toComparator(expectation)(got);
     }
-    const ulp = Math.max(oneULP(target.value, true), oneULP(target.value, false));
-
-    return {
-      matched: false,
-      got: got.toString(),
-      expected: `within ${c} * ULP (${ulp}) of ${target}`,
-    };
+    return { matched: true, got: got.toString(), expected: `Treating 'undefined' as Any` };
   };
+
+  if (getIsBuildingDataCache()) {
+    // If there's an active DataCache, and it supports storing, then append the
+    // comparator kind and serialized expectations to the comparator, so it can
+    // be serialized.
+    comparator.kind = 'skipUndefined';
+    if (expectation !== undefined) {
+      comparator.data = serializeExpectation(expectation);
+    }
+  }
+  return comparator;
 }
 
-/** @returns a Comparator that checks whether a result is contained within a target interval
- *
- * NB: This will be removed at the end of transition to the new FP testing framework.
+/** SerializedComparatorAnyOf is the serialized type of an `anyOf` comparator. */
+
+/**
+ * Deserializes a comparator from a SerializedComparator.
+ * @param data the SerializedComparator
+ * @returns the deserialized Comparator.
  */
-export function intervalComparator(i) {
-  const match = intervalMatch(i);
-  return (got, _) => {
-    // The second param is ignored by match
-    const cmp = compare(got, f32(0.0), match);
-    if (cmp.matched) {
-      return cmp;
+export function deserializeComparator(data) {
+  switch (data.kind) {
+    case 'anyOf': {
+      return anyOf(...data.data.map(e => deserializeExpectation(e)));
     }
-    return {
-      matched: false,
-      got: got.toString(),
-      expected: `within ${i}`,
-    };
-  };
+    case 'skipUndefined': {
+      return skipUndefined(data.data !== undefined ? deserializeExpectation(data.data) : undefined);
+    }
+  }
+
+  throw `unhandled comparator kind`;
 }

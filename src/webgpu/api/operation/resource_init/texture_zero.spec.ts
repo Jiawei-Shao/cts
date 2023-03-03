@@ -577,7 +577,7 @@ g.test('uninitialized_texture_is_zero')
   .beforeAllSubcases(t => {
     t.selectDeviceOrSkipTestCase(kTextureFormatInfo[t.params.format].feature);
   })
-  .fn(async t => {
+  .fn(t => {
     const usage = getRequiredTextureUsage(
       t.params.format,
       t.params.sampleCount,
@@ -593,6 +593,7 @@ g.test('uninitialized_texture_is_zero')
       mipLevelCount: t.params.mipLevelCount,
       sampleCount: t.params.sampleCount,
     });
+    t.trackForCleanup(texture);
 
     if (t.params.canaryOnCreation) {
       // Initialize some subresources with canary values

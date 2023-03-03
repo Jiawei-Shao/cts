@@ -1,6 +1,8 @@
 /**
 * AUTO-GENERATED - DO NOT EDIT. Source: https://github.com/gpuweb/cts
-**/import { Logger } from '../internal/logging/logger.js';import { keysOf } from './data_tables.js';
+**/import { Float16Array } from '../../external/petamoriken/float16/float16.js';import { globalTestConfig } from '../framework/test_config.js';import { Logger } from '../internal/logging/logger.js';
+
+import { keysOf } from './data_tables.js';
 import { timeout } from './timeout.js';
 
 /**
@@ -24,8 +26,8 @@ export class ErrorWithExtra extends Error {
     this.extra = Logger.globalDebugMode ?
     { ...oldExtras, ...newExtra() } :
     { omitted: 'pass ?debug=1' };
-  }}
-
+  }
+}
 
 /**
  * Asserts `condition` is true. Otherwise, throws an `Error` with the provided message.
@@ -52,9 +54,9 @@ export async function assertReject(p, msg) {
     await p;
     unreachable(msg);
   } catch (ex) {
+
     // Assertion OK
-  }
-}
+  }}
 
 /**
  * Assert this code is unreachable. Unconditionally throws an `Error`.
@@ -105,6 +107,9 @@ export function rejectOnTimeout(ms, msg) {
  * and otherwise passes the result through.
  */
 export function raceWithRejectOnTimeout(p, ms, msg) {
+  if (globalTestConfig.noRaceWithRejectOnTimeout) {
+    return p;
+  }
   // Setup a promise that will reject after `ms` milliseconds. We cancel this timeout when
   // `p` is finalized, so the JavaScript VM doesn't hang around waiting for the timer to
   // complete, once the test runner has finished executing the tests.
@@ -115,6 +120,27 @@ export function raceWithRejectOnTimeout(p, ms, msg) {
     p = p.finally(() => clearTimeout(handle));
   });
   return Promise.race([p, timeoutPromise]);
+}
+
+/**
+ * Takes a promise `p` and returns a new one which rejects if `p` resolves or rejects,
+ * and otherwise resolves after the specified time.
+ */
+export function assertNotSettledWithinTime(
+p,
+ms,
+msg)
+{
+  // Rejects regardless of whether p resolves or rejects.
+  const rejectWhenSettled = p.then(() => Promise.reject(new Error(msg)));
+  // Resolves after `ms` milliseconds.
+  const timeoutPromise = new Promise((resolve) => {
+    const handle = timeout(() => {
+      resolve(undefined);
+    }, ms);
+    p.finally(() => clearTimeout(handle));
+  });
+  return Promise.race([rejectWhenSettled, timeoutPromise]);
 }
 
 /**
@@ -141,9 +167,15 @@ export function sortObjectByKey(v) {
 
 /**
  * Determines whether two JS values are equal, recursing into objects and arrays.
+ * NaN is treated specially, such that `objectEquals(NaN, NaN)`.
  */
 export function objectEquals(x, y) {
-  if (typeof x !== 'object' || typeof y !== 'object') return x === y;
+  if (typeof x !== 'object' || typeof y !== 'object') {
+    if (typeof x === 'number' && typeof y === 'number' && Number.isNaN(x) && Number.isNaN(y)) {
+      return true;
+    }
+    return x === y;
+  }
   if (x === null || y === null) return x === y;
   if (x.constructor !== y.constructor) return false;
   if (x instanceof Function) return x === y;
@@ -183,7 +215,42 @@ export function mapLazy(xs, f) {
       for (const x of xs) {
         yield f(x);
       }
-    } };
+    }
+  };
+}
+
+const ReorderOrders = {
+  forward: true,
+  backward: true,
+  shiftByHalf: true
+};
+
+export const kReorderOrderKeys = keysOf(ReorderOrders);
+
+/**
+ * Creates a new array from the given array with the first half
+ * swapped with the last half.
+ */
+export function shiftByHalf(arr) {
+  const len = arr.length;
+  const half = len / 2 | 0;
+  const firstHalf = arr.splice(0, half);
+  return [...arr, ...firstHalf];
+}
+
+/**
+ * Creates a reordered array from the input array based on the Order
+ */
+export function reorder(order, arr) {
+  switch (order) {
+    case 'forward':
+      return arr.slice();
+    case 'backward':
+      return arr.slice().reverse();
+    case 'shiftByHalf':{
+        // should this be pseudo random?
+        return shiftByHalf(arr);
+      }}
 
 }
 
@@ -195,6 +262,7 @@ new Uint32Array(),
 new Int8Array(),
 new Int16Array(),
 new Int32Array(),
+new Float16Array(),
 new Float32Array(),
 new Float64Array()];
 
@@ -232,8 +300,8 @@ export const kTypedArrayBufferViews =
       result[v.constructor.name] = v.constructor;
     }
     return result;
-  })() };
-
+  })()
+};
 export const kTypedArrayBufferViewKeys = keysOf(kTypedArrayBufferViews);
 export const kTypedArrayBufferViewConstructors = Object.values(kTypedArrayBufferViews);
 
@@ -243,10 +311,18 @@ buf,
 {
   if (buf instanceof ArrayBuffer) {
     return new Uint8Array(buf, start, length);
-  } else {
-    const sub = buf.subarray(start, length !== undefined ? start + length : undefined);
-    return new Uint8Array(sub.buffer, sub.byteOffset, sub.byteLength);
+  } else if (buf instanceof Uint8Array || buf instanceof Uint8ClampedArray) {
+    // Don't wrap in new views if we don't need to.
+    if (start === 0 && (length === undefined || length === buf.byteLength)) {
+      return buf;
+    }
   }
+  const byteOffset = buf.byteOffset + start * buf.BYTES_PER_ELEMENT;
+  const byteLength =
+  length !== undefined ?
+  length * buf.BYTES_PER_ELEMENT :
+  buf.byteLength - (byteOffset - buf.byteOffset);
+  return new Uint8Array(buf.buffer, byteOffset, byteLength);
 }
 
 /**

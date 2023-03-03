@@ -16,11 +16,8 @@ Component-wise when T is a vector.
 `;
 import { makeTestGroup } from '../../../../../../common/framework/test_group.js';
 import { GPUTest } from '../../../../../gpu_test.js';
-import { anyOf, correctlyRoundedMatch } from '../../../../../util/compare.js';
 import { kBit } from '../../../../../util/constants.js';
 import {
-  f32,
-  f32Bits,
   i32,
   i32Bits,
   TypeF32,
@@ -29,12 +26,65 @@ import {
   u32,
   u32Bits,
 } from '../../../../../util/conversion.js';
-import { isSubnormalScalar } from '../../../../../util/math.js';
-import { allInputSources, run } from '../../expression.js';
+import { clampIntervals } from '../../../../../util/f32_interval.js';
+import { sparseF32Range } from '../../../../../util/math.js';
+import { makeCaseCache } from '../../case_cache.js';
+import { allInputSources, generateTernaryToF32IntervalCases, run } from '../../expression.js';
 
 import { builtin } from './builtin.js';
 
 export const g = makeTestGroup(GPUTest);
+
+export const d = makeCaseCache('clamp', {
+  u32: () => {
+    // This array must be strictly increasing, since that ordering determines
+    // the expected values.
+    const test_values = [
+      u32Bits(kBit.u32.min),
+      u32(1),
+      u32(2),
+      u32(0x70000000),
+      u32(0x80000000),
+      u32Bits(kBit.u32.max),
+    ];
+
+    return generateIntegerTestCases(test_values);
+  },
+  i32: () => {
+    // This array must be strictly increasing, since that ordering determines
+    // the expected values.
+    const test_values = [
+      i32Bits(kBit.i32.negative.min),
+      i32(-2),
+      i32(-1),
+      i32(0),
+      i32(1),
+      i32(2),
+      i32Bits(0x70000000),
+      i32Bits(kBit.i32.positive.max),
+    ];
+
+    return generateIntegerTestCases(test_values);
+  },
+  f32_const: () => {
+    return generateTernaryToF32IntervalCases(
+      sparseF32Range(),
+      sparseF32Range(),
+      sparseF32Range(),
+      'f32-only',
+      ...clampIntervals
+    );
+  },
+  f32_non_const: () => {
+    return generateTernaryToF32IntervalCases(
+      sparseF32Range(),
+      sparseF32Range(),
+      sparseF32Range(),
+      'unfiltered',
+      ...clampIntervals
+    );
+  },
+});
 
 /**
  * Calculates clamp using the min-max formula.
@@ -49,20 +99,6 @@ function calculateMinMaxClamp(ei, fi, gi) {
   return Math.min(Math.max(ei, fi), gi);
 }
 
-/**
- * Calculates clamp as the median of three numbers
- *
- * Operates on indices of an ascending sorted array, instead of the actual
- * values to avoid rounding issues.
- *
- * @returns the index of the clamped value
- */
-function calculateMedianClamp(ei, fi, gi) {
-  return [ei, fi, gi].sort((a, b) => {
-    return a - b;
-  })[1];
-}
-
 /** @returns a set of clamp test cases from an ascending list of integer values */
 function generateIntegerTestCases(test_values) {
   const cases = new Array();
@@ -70,47 +106,8 @@ function generateIntegerTestCases(test_values) {
     test_values.forEach((f, fi) => {
       test_values.forEach((g, gi) => {
         const expected_idx = calculateMinMaxClamp(ei, fi, gi);
-        const precise_expected = test_values[expected_idx];
-        const expected = isSubnormalScalar(precise_expected)
-          ? anyOf(precise_expected, f32(0.0))
-          : precise_expected;
+        const expected = test_values[expected_idx];
         cases.push({ input: [e, f, g], expected });
-      });
-    });
-  });
-  return cases;
-}
-
-/** @returns a set of clamp test cases from an ascending list of floating point values */
-function generateFloatTestCases(test_values) {
-  const cases = new Array();
-  test_values.forEach((e, ei) => {
-    test_values.forEach((f, fi) => {
-      test_values.forEach((g, gi) => {
-        // Spec allows backends for floats to either return the min-max formula or median of 3 numbers
-        const expected_values = [];
-        {
-          const expected_idx = calculateMinMaxClamp(ei, fi, gi);
-          const precise_expected = test_values[expected_idx];
-          if (!expected_values.includes(precise_expected)) {
-            expected_values.push(precise_expected);
-          }
-        }
-        {
-          const expected_idx = calculateMedianClamp(ei, fi, gi);
-          const precise_expected = test_values[expected_idx];
-          if (!expected_values.includes(precise_expected)) {
-            expected_values.push(precise_expected);
-          }
-        }
-        const contains_subnormals =
-          expected_values.filter(x => {
-            return isSubnormalScalar(x);
-          }).length > 0;
-        if (contains_subnormals) {
-          expected_values.push(f32(0.0));
-        }
-        cases.push({ input: [e, f, g], expected: anyOf(...expected_values) });
       });
     });
   });
@@ -128,25 +125,8 @@ g.test('u32')
   .desc(`u32 tests`)
   .params(u => u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4]))
   .fn(async t => {
-    // This array must be strictly increasing, since that ordering determines
-    // the expected values.
-    const test_values = [
-      u32Bits(kBit.u32.min),
-      u32(1),
-      u32(2),
-      u32(0x70000000),
-      u32(0x80000000),
-      u32Bits(kBit.u32.max),
-    ];
-
-    run(
-      t,
-      builtin('clamp'),
-      [TypeU32, TypeU32, TypeU32],
-      TypeU32,
-      t.params,
-      generateIntegerTestCases(test_values)
-    );
+    const cases = await d.get('u32');
+    await run(t, builtin('clamp'), [TypeU32, TypeU32, TypeU32], TypeU32, t.params, cases);
   });
 
 g.test('i32')
@@ -154,27 +134,8 @@ g.test('i32')
   .desc(`i32 tests`)
   .params(u => u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4]))
   .fn(async t => {
-    // This array must be strictly increasing, since that ordering determines
-    // the expected values.
-    const test_values = [
-      i32Bits(kBit.i32.negative.min),
-      i32(-2),
-      i32(-1),
-      i32(0),
-      i32(1),
-      i32(2),
-      i32Bits(0x70000000),
-      i32Bits(kBit.i32.positive.max),
-    ];
-
-    run(
-      t,
-      builtin('clamp'),
-      [TypeI32, TypeI32, TypeI32],
-      TypeI32,
-      t.params,
-      generateIntegerTestCases(test_values)
-    );
+    const cases = await d.get('i32');
+    await run(t, builtin('clamp'), [TypeI32, TypeI32, TypeI32], TypeI32, t.params, cases);
   });
 
 g.test('abstract_float')
@@ -188,37 +149,8 @@ g.test('f32')
   .desc(`f32 tests`)
   .params(u => u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4]))
   .fn(async t => {
-    const cfg = t.params;
-    cfg.cmpFloats = correctlyRoundedMatch();
-
-    // This array must be strictly increasing, since that ordering determines
-    // the expected values.
-    const test_values = [
-      f32Bits(kBit.f32.infinity.negative),
-      f32Bits(kBit.f32.negative.min),
-      f32(-10.0),
-      f32(-1.0),
-      f32Bits(kBit.f32.negative.max),
-      f32Bits(kBit.f32.subnormal.negative.min),
-      f32Bits(kBit.f32.subnormal.negative.max),
-      f32(0.0),
-      f32Bits(kBit.f32.subnormal.positive.min),
-      f32Bits(kBit.f32.subnormal.positive.max),
-      f32Bits(kBit.f32.positive.min),
-      f32(1.0),
-      f32(10.0),
-      f32Bits(kBit.f32.positive.max),
-      f32Bits(kBit.f32.infinity.positive),
-    ];
-
-    run(
-      t,
-      builtin('clamp'),
-      [TypeF32, TypeF32, TypeF32],
-      TypeF32,
-      cfg,
-      generateFloatTestCases(test_values)
-    );
+    const cases = await d.get(t.params.inputSource === 'const' ? 'f32_const' : 'f32_non_const');
+    await run(t, builtin('clamp'), [TypeF32, TypeF32, TypeF32], TypeF32, t.params, cases);
   });
 
 g.test('f16')

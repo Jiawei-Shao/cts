@@ -24,10 +24,12 @@ import { ValidationTest } from './validation_test.js';
 
 export const g = makeTestGroup(ValidationTest);
 
-g.test('zero_size')
+g.test('zero_size_and_usage')
   .desc(
     `Test texture creation with zero or nonzero size of
-    width, height, depthOrArrayLayers and mipLevelCount for every dimension, and representative formats.`
+    width, height, depthOrArrayLayers and mipLevelCount, usage for every dimension, and
+    representative formats.
+  `
   )
   .params(u =>
     u
@@ -45,6 +47,7 @@ g.test('zero_size')
         'height',
         'depthOrArrayLayers',
         'mipLevelCount',
+        'usage',
       ] as const)
       // Filter out incompatible dimension type and format combinations.
       .filter(({ dimension, format }) => textureDimensionAndFormatCompatible(dimension, format))
@@ -54,12 +57,13 @@ g.test('zero_size')
     const info = kTextureFormatInfo[format];
     t.selectDeviceOrSkipTestCase(info.feature);
   })
-  .fn(async t => {
+  .fn(t => {
     const { dimension, zeroArgument, format } = t.params;
     const info = kTextureFormatInfo[format];
 
     const size = [info.blockWidth, info.blockHeight, 1];
     let mipLevelCount = 1;
+    let usage = GPUTextureUsage.TEXTURE_BINDING;
 
     switch (zeroArgument) {
       case 'width':
@@ -74,6 +78,9 @@ g.test('zero_size')
       case 'mipLevelCount':
         mipLevelCount = 0;
         break;
+      case 'usage':
+        usage = 0;
+        break;
       default:
         break;
     }
@@ -83,7 +90,7 @@ g.test('zero_size')
       mipLevelCount,
       dimension,
       format,
-      usage: GPUTextureUsage.TEXTURE_BINDING,
+      usage,
     };
 
     const success = zeroArgument === 'none';
@@ -105,7 +112,7 @@ g.test('dimension_type_and_format_compatibility')
     const info = kTextureFormatInfo[format];
     t.selectDeviceOrSkipTestCase(info.feature);
   })
-  .fn(async t => {
+  .fn(t => {
     const { dimension, format } = t.params;
     const info = kTextureFormatInfo[format];
 
@@ -142,7 +149,7 @@ g.test('mipLevelCount,format')
     const info = kTextureFormatInfo[format];
     t.selectDeviceOrSkipTestCase(info.feature);
   })
-  .fn(async t => {
+  .fn(t => {
     const { dimension, format, mipLevelCount, largestDimension } = t.params;
     const info = kTextureFormatInfo[format];
 
@@ -220,7 +227,7 @@ g.test('mipLevelCount,bound_check')
     const info = kTextureFormatInfo[format];
     t.selectDeviceOrSkipTestCase(info.feature);
   })
-  .fn(async t => {
+  .fn(t => {
     const { format, size, dimension } = t.params;
 
     const descriptor = {
@@ -243,7 +250,7 @@ g.test('mipLevelCount,bound_check')
 
 g.test('mipLevelCount,bound_check,bigger_than_integer_bit_width')
   .desc(`Test mip level count bound check when mipLevelCount is bigger than integer bit width`)
-  .fn(async t => {
+  .fn(t => {
     const descriptor = {
       size: [32, 32],
       mipLevelCount: 100,
@@ -272,7 +279,7 @@ g.test('sampleCount,various_sampleCount_with_all_formats')
     const info = kTextureFormatInfo[format];
     t.selectDeviceOrSkipTestCase(info.feature);
   })
-  .fn(async t => {
+  .fn(t => {
     const { dimension, sampleCount, format } = t.params;
     const { blockWidth, blockHeight } = kTextureFormatInfo[format];
 
@@ -301,9 +308,14 @@ g.test('sampleCount,various_sampleCount_with_all_formats')
 
 g.test('sampleCount,valid_sampleCount_with_other_parameter_varies')
   .desc(
-    `Test texture creation with valid sample count when dimensions, arrayLayerCount, mipLevelCount, format, and usage varies.
-     Texture can be single sample (sampleCount is 1) or multi-sample (sampleCount is 4).
-     Multisample texture requires that 1) its dimension is 2d or undefined, 2) its format supports multisample, 3) its mipLevelCount and arrayLayerCount are 1, 4) its usage doesn't include STORAGE_BINDING.`
+    `Test texture creation with valid sample count when dimensions, arrayLayerCount, mipLevelCount,
+     format, and usage varies. Texture can be single sample (sampleCount is 1) or multi-sample
+     (sampleCount is 4). Multisample texture requires that
+     1) its dimension is 2d or undefined,
+     2) its format supports multisample,
+     3) its mipLevelCount and arrayLayerCount are 1,
+     4) its usage doesn't include STORAGE_BINDING,
+     5) its usage includes RENDER_ATTACHMENT.`
   )
   .params(u =>
     u
@@ -317,24 +329,24 @@ g.test('sampleCount,valid_sampleCount_with_other_parameter_varies')
           arrayLayerCount === 2 && dimension !== '2d' && dimension !== undefined
       )
       .combine('mipLevelCount', [1, 2])
-      .combine('usage', kTextureUsages)
+      .expand('usage', p => {
+        const usageSet = new Set<number>();
+        for (const usage0 of kTextureUsages) {
+          for (const usage1 of kTextureUsages) {
+            usageSet.add(usage0 | usage1);
+          }
+        }
+        return usageSet;
+      })
       // Filter out incompatible dimension type and format combinations.
       .filter(({ dimension, format }) => textureDimensionAndFormatCompatible(dimension, format))
-      .unless(({ sampleCount, usage, format, mipLevelCount, dimension }) => {
+      .unless(({ usage, format, mipLevelCount, dimension }) => {
         const info = kTextureFormatInfo[format];
         return (
           ((usage & GPUConst.TextureUsage.RENDER_ATTACHMENT) !== 0 &&
             (!info.renderable || dimension !== '2d')) ||
           ((usage & GPUConst.TextureUsage.STORAGE_BINDING) !== 0 && !info.storage) ||
-          (mipLevelCount !== 1 && dimension === '1d') ||
-          // MAINTENANCE_TODO: test that it is not allowed to create a multisampled texture without
-          // RENDER_ATTACHMENT usage.
-          (sampleCount > 1 &&
-            (!info.multisample ||
-              (usage &
-                (GPUConst.TextureUsage.STORAGE_BINDING |
-                  GPUConst.TextureUsage.RENDER_ATTACHMENT)) ===
-                0))
+          (mipLevelCount !== 1 && dimension === '1d')
         );
       })
   )
@@ -343,7 +355,7 @@ g.test('sampleCount,valid_sampleCount_with_other_parameter_varies')
     const info = kTextureFormatInfo[format];
     t.selectDeviceOrSkipTestCase(info.feature);
   })
-  .fn(async t => {
+  .fn(t => {
     const { dimension, sampleCount, format, mipLevelCount, arrayLayerCount, usage } = t.params;
     const { blockWidth, blockHeight } = kTextureFormatInfo[format];
 
@@ -369,11 +381,37 @@ g.test('sampleCount,valid_sampleCount_with_other_parameter_varies')
         kTextureFormatInfo[format].multisample &&
         mipLevelCount === 1 &&
         arrayLayerCount === 1 &&
+        (usage & GPUConst.TextureUsage.RENDER_ATTACHMENT) !== 0 &&
         (usage & GPUConst.TextureUsage.STORAGE_BINDING) === 0);
 
     t.expectValidationError(() => {
       t.device.createTexture(descriptor);
     }, !success);
+  });
+
+g.test('sample_count,1d_2d_array_3d')
+  .desc(`Test that you can not create 1d, 2d_array, and 3d multisampled textures`)
+  .params(u =>
+    u.combineWithParams([
+      { dimension: '2d', size: [4, 4, 1], shouldError: false },
+      { dimension: '1d', size: [4, 1, 1], shouldError: true },
+      { dimension: '2d', size: [4, 4, 4], shouldError: true },
+      { dimension: '2d', size: [4, 4, 6], shouldError: true },
+      { dimension: '3d', size: [4, 4, 4], shouldError: true },
+    ] as const)
+  )
+  .fn(t => {
+    const { dimension, size, shouldError } = t.params;
+
+    t.expectValidationError(() => {
+      t.device.createTexture({
+        size,
+        dimension,
+        sampleCount: 4,
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
+      });
+    }, shouldError);
   });
 
 g.test('texture_size,default_value_and_smallest_size,uncompressed_format')
@@ -395,7 +433,7 @@ g.test('texture_size,default_value_and_smallest_size,uncompressed_format')
     const info = kTextureFormatInfo[format];
     t.selectDeviceOrSkipTestCase(info.feature);
   })
-  .fn(async t => {
+  .fn(t => {
     const { dimension, format, size } = t.params;
 
     const descriptor: GPUTextureDescriptor = {
@@ -436,7 +474,7 @@ g.test('texture_size,default_value_and_smallest_size,compressed_format')
     const info = kTextureFormatInfo[format];
     t.selectDeviceOrSkipTestCase(info.feature);
   })
-  .fn(async t => {
+  .fn(t => {
     const { dimension, format, size, _success } = t.params;
 
     const descriptor: GPUTextureDescriptor = {
@@ -471,7 +509,7 @@ g.test('texture_size,1d_texture')
     const info = kTextureFormatInfo[format];
     t.selectDeviceOrSkipTestCase(info.feature);
   })
-  .fn(async t => {
+  .fn(t => {
     const { format, width, height, depthOrArrayLayers } = t.params;
 
     const descriptor: GPUTextureDescriptor = {
@@ -515,7 +553,7 @@ g.test('texture_size,2d_texture,uncompressed_format')
     const info = kTextureFormatInfo[format];
     t.selectDeviceOrSkipTestCase(info.feature);
   })
-  .fn(async t => {
+  .fn(t => {
     const { dimension, format, size } = t.params;
 
     const descriptor: GPUTextureDescriptor = {
@@ -583,7 +621,7 @@ g.test('texture_size,2d_texture,compressed_format')
     const info = kTextureFormatInfo[format];
     t.selectDeviceOrSkipTestCase(info.feature);
   })
-  .fn(async t => {
+  .fn(t => {
     const { dimension, format, size } = t.params;
     const info = kTextureFormatInfo[format];
 
@@ -634,7 +672,7 @@ g.test('texture_size,3d_texture,uncompressed_format')
     const info = kTextureFormatInfo[format];
     t.selectDeviceOrSkipTestCase(info.feature);
   })
-  .fn(async t => {
+  .fn(t => {
     const { format, size } = t.params;
 
     const descriptor: GPUTextureDescriptor = {
@@ -705,7 +743,7 @@ g.test('texture_size,3d_texture,compressed_format')
     const info = kTextureFormatInfo[format];
     t.selectDeviceOrSkipTestCase(info.feature);
   })
-  .fn(async t => {
+  .fn(t => {
     const { format, size } = t.params;
     const info = kTextureFormatInfo[format];
 
@@ -753,7 +791,7 @@ g.test('texture_usage')
     const info = kTextureFormatInfo[format];
     t.selectDeviceOrSkipTestCase(info.feature);
   })
-  .fn(async t => {
+  .fn(t => {
     const { dimension, format, usage0, usage1 } = t.params;
     const info = kTextureFormatInfo[format];
 
@@ -803,7 +841,7 @@ g.test('viewFormats')
     const { formatFeature, viewFormatFeature } = t.params;
     t.selectDeviceOrSkipTestCase([formatFeature, viewFormatFeature]);
   })
-  .fn(async t => {
+  .fn(t => {
     const { format, viewFormat } = t.params;
     const { blockWidth, blockHeight } = kTextureFormatInfo[format];
 
