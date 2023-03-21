@@ -1,7 +1,7 @@
 /**
  * AUTO-GENERATED - DO NOT EDIT. Source: https://github.com/gpuweb/cts
  **/ import { roundDown } from '../../../../util/math.js';
-import { kLimitBaseParams, makeLimitTestGroup } from './limit_utils.js';
+import { kMaximumLimitBaseParams, makeLimitTestGroup } from './limit_utils.js';
 
 function getPipelineDescriptor(device, testValue) {
   const code = `
@@ -82,11 +82,11 @@ const limit = 'maxVertexBufferArrayStride';
 export const { g, description } = makeLimitTestGroup(limit);
 
 g.test('createRenderPipeline,at_over')
-  .desc(`Test using createRenderPipeline at and over ${limit} limit`)
-  .params(kLimitBaseParams)
+  .desc(`Test using createRenderPipeline(Async) at and over ${limit} limit`)
+  .params(kMaximumLimitBaseParams.combine('async', [false, true]))
   .fn(async t => {
-    const { limitTest, testValueName } = t.params;
-    const { defaultLimit, maximumLimit } = t;
+    const { limitTest, testValueName, async } = t.params;
+    const { defaultLimit, adapterLimit: maximumLimit } = t;
     const { requestedLimit, testValue } = getDeviceLimitToRequestAndValueToTest(
       limitTest,
       testValueName,
@@ -100,36 +100,7 @@ g.test('createRenderPipeline,at_over')
       async ({ device, testValue, shouldError }) => {
         const pipelineDescriptor = getPipelineDescriptor(device, testValue);
 
-        await t.expectValidationError(() => {
-          device.createRenderPipeline(pipelineDescriptor);
-        }, shouldError);
-      }
-    );
-  });
-
-g.test('createRenderPipelineAsync,at_over')
-  .desc(`Test using createRenderPipelineAsync at and over ${limit} limit`)
-  .params(kLimitBaseParams)
-  .fn(async t => {
-    const { limitTest, testValueName } = t.params;
-    const { defaultLimit, maximumLimit } = t;
-    const { requestedLimit, testValue } = getDeviceLimitToRequestAndValueToTest(
-      limitTest,
-      testValueName,
-      defaultLimit,
-      maximumLimit
-    );
-
-    await t.testDeviceWithSpecificLimits(
-      requestedLimit,
-      testValue,
-      async ({ device, testValue, shouldError }) => {
-        const pipelineDescriptor = getPipelineDescriptor(device, testValue);
-        await t.shouldRejectConditionally(
-          'GPUPipelineError',
-          device.createRenderPipelineAsync(pipelineDescriptor),
-          shouldError
-        );
+        await t.testCreateRenderPipeline(pipelineDescriptor, async, shouldError);
       }
     );
   });

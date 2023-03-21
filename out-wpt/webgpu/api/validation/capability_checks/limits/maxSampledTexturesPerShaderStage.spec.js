@@ -4,12 +4,11 @@
 import { kShaderStageCombinationsWithStage } from '../../../../capability_info.js';
 
 import {
-  kLimitBaseParams,
+  kMaximumLimitBaseParams,
   makeLimitTestGroup,
   kBindGroupTests,
   kBindingCombinations,
   getPipelineTypeForBindingCombination,
-  getPipelineAsyncTypeForBindingCombination,
   getPerStageWGSLForBindingCombination,
 } from './limit_utils.js';
 
@@ -39,13 +38,13 @@ g.test('createBindGroupLayout,at_over')
   `
   )
   .params(
-    kLimitBaseParams
+    kMaximumLimitBaseParams
       .combine('visibility', kShaderStageCombinationsWithStage)
       .combine('order', kReorderOrderKeys)
   )
   .fn(async t => {
     const { limitTest, testValueName, visibility, order } = t.params;
-    await t.testDeviceWithRequestedLimits(
+    await t.testDeviceWithRequestedMaximumLimits(
       limitTest,
       testValueName,
       async ({ device, testValue, shouldError }) => {
@@ -67,13 +66,13 @@ g.test('createPipelineLayout,at_over')
   `
   )
   .params(
-    kLimitBaseParams
+    kMaximumLimitBaseParams
       .combine('visibility', kShaderStageCombinationsWithStage)
       .combine('order', kReorderOrderKeys)
   )
   .fn(async t => {
     const { limitTest, testValueName, visibility, order } = t.params;
-    await t.testDeviceWithRequestedLimits(
+    await t.testDeviceWithRequestedMaximumLimits(
       limitTest,
       testValueName,
       async ({ device, testValue, shouldError }) => {
@@ -94,23 +93,24 @@ g.test('createPipelineLayout,at_over')
 g.test('createPipeline,at_over')
   .desc(
     `
-  Test using createRenderPipeline and createComputePipeline at and over ${limit} limit
+  Test using createRenderPipeline(Async) and createComputePipeline(Async) at and over ${limit} limit
   
   Note: We also test order to make sure the implementation isn't just looking
   at just the last entry.
   `
   )
   .params(
-    kLimitBaseParams
+    kMaximumLimitBaseParams
+      .combine('async', [false, true])
       .combine('bindingCombination', kBindingCombinations)
       .combine('order', kReorderOrderKeys)
       .combine('bindGroupTest', kBindGroupTests)
   )
   .fn(async t => {
-    const { limitTest, testValueName, bindingCombination, order, bindGroupTest } = t.params;
+    const { limitTest, testValueName, async, bindingCombination, order, bindGroupTest } = t.params;
     const pipelineType = getPipelineTypeForBindingCombination(bindingCombination);
 
-    await t.testDeviceWithRequestedLimits(
+    await t.testDeviceWithRequestedMaximumLimits(
       limitTest,
       testValueName,
       async ({ device, testValue, actualLimit, shouldError }) => {
@@ -125,54 +125,10 @@ g.test('createPipeline,at_over')
 
         const module = device.createShaderModule({ code });
 
-        await t.expectValidationError(
-          () => {
-            t.createPipeline(pipelineType, module);
-          },
-          shouldError,
-          `actualLimit: ${actualLimit}, testValue: ${testValue}\n:${code}`
-        );
-      }
-    );
-  });
-
-g.test('createPipelineAsync,at_over')
-  .desc(
-    `
-  Test using createRenderPipelineAsync and createComputePipelineAsync at and over ${limit} limit
-  
-  Note: We also test order to make sure the implementation isn't just looking
-  at just the last entry.
-  `
-  )
-  .params(
-    kLimitBaseParams
-      .combine('bindingCombination', kBindingCombinations)
-      .combine('order', kReorderOrderKeys)
-      .combine('bindGroupTest', kBindGroupTests)
-  )
-  .fn(async t => {
-    const { limitTest, testValueName, bindingCombination, order, bindGroupTest } = t.params;
-    const pipelineType = getPipelineAsyncTypeForBindingCombination(bindingCombination);
-
-    await t.testDeviceWithRequestedLimits(
-      limitTest,
-      testValueName,
-      async ({ device, testValue, actualLimit, shouldError }) => {
-        const code = getPerStageWGSLForBindingCombination(
-          bindingCombination,
-          order,
-          bindGroupTest,
-          (i, j) => `var u${j}_${i}: texture_2d<f32>`,
-          (i, j) => `_ = textureLoad(u${j}_${i}, vec2u(0), 0);`,
-          testValue
-        );
-
-        const module = device.createShaderModule({ code });
-
-        await t.shouldRejectConditionally(
-          'GPUPipelineError',
-          t.createPipelineAsync(pipelineType, module),
+        await t.testCreatePipeline(
+          pipelineType,
+          async,
+          module,
           shouldError,
           `actualLimit: ${actualLimit}, testValue: ${testValue}\n:${code}`
         );

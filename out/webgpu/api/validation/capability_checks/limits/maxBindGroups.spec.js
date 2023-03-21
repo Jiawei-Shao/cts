@@ -2,9 +2,8 @@
 * AUTO-GENERATED - DO NOT EDIT. Source: https://github.com/gpuweb/cts
 **/import { range } from '../../../../../common/util/util.js';import {
 kCreatePipelineTypes,
-kCreatePipelineAsyncTypes,
 kEncoderTypes,
-kLimitBaseParams,
+kMaximumLimitBaseParams,
 makeLimitTestGroup } from
 './limit_utils.js';
 
@@ -13,10 +12,10 @@ export const { g, description } = makeLimitTestGroup(limit);
 
 g.test('createPipelineLayout,at_over').
 desc(`Test using createPipelineLayout at and over ${limit} limit`).
-params(kLimitBaseParams).
+params(kMaximumLimitBaseParams).
 fn(async (t) => {
   const { limitTest, testValueName } = t.params;
-  await t.testDeviceWithRequestedLimits(
+  await t.testDeviceWithRequestedMaximumLimits(
   limitTest,
   testValueName,
   async ({ device, testValue, shouldError }) => {
@@ -40,12 +39,18 @@ fn(async (t) => {
 });
 
 g.test('createPipeline,at_over').
-desc(`Test using createRenderPipeline and createComputePipeline at and over ${limit} limit`).
-params(kLimitBaseParams.combine('createPipelineType', kCreatePipelineTypes)).
-fn(async (t) => {
-  const { limitTest, testValueName, createPipelineType } = t.params;
+desc(
+`Test using createRenderPipeline(Async) and createComputePipeline(Async) at and over ${limit} limit`).
 
-  await t.testDeviceWithRequestedLimits(
+params(
+kMaximumLimitBaseParams.
+combine('createPipelineType', kCreatePipelineTypes).
+combine('async', [false, true])).
+
+fn(async (t) => {
+  const { limitTest, testValueName, createPipelineType, async } = t.params;
+
+  await t.testDeviceWithRequestedMaximumLimits(
   limitTest,
   testValueName,
   async ({ device, testValue, shouldError }) => {
@@ -54,42 +59,17 @@ fn(async (t) => {
     const code = t.getGroupIndexWGSLForPipelineType(createPipelineType, lastIndex);
     const module = device.createShaderModule({ code });
 
-    await t.expectValidationError(() => {
-      t.createPipeline(createPipelineType, module);
-    }, shouldError);
-  });
-
-});
-
-g.test('createPipelineAsync,at_over').
-desc(
-`Test using createRenderPipelineAsync and createComputePipelineAsync at and over ${limit} limit`).
-
-params(kLimitBaseParams.combine('createPipelineAsyncType', kCreatePipelineAsyncTypes)).
-fn(async (t) => {
-  const { limitTest, testValueName, createPipelineAsyncType } = t.params;
-
-  await t.testDeviceWithRequestedLimits(
-  limitTest,
-  testValueName,
-  async ({ device, testValue, shouldError }) => {
-    const lastIndex = testValue - 1;
-
-    const code = t.getGroupIndexWGSLForPipelineType(createPipelineAsyncType, lastIndex);
-    const module = device.createShaderModule({ code });
-
-    const promise = t.createPipelineAsync(createPipelineAsyncType, module);
-    await t.shouldRejectConditionally('GPUPipelineError', promise, shouldError);
+    await t.testCreatePipeline(createPipelineType, async, module, shouldError);
   });
 
 });
 
 g.test('setBindGroup,at_over').
 desc(`Test using setBindGroup at and over ${limit} limit`).
-params(kLimitBaseParams.combine('encoderType', kEncoderTypes)).
+params(kMaximumLimitBaseParams.combine('encoderType', kEncoderTypes)).
 fn(async (t) => {
   const { limitTest, testValueName, encoderType } = t.params;
-  await t.testDeviceWithRequestedLimits(
+  await t.testDeviceWithRequestedMaximumLimits(
   limitTest,
   testValueName,
   async ({ testValue, actualLimit, shouldError }) => {

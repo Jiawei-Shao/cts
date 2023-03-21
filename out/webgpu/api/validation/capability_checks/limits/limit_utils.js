@@ -1,60 +1,37 @@
 /**
 * AUTO-GENERATED - DO NOT EDIT. Source: https://github.com/gpuweb/cts
-**/import { kUnitCaseParamsBuilder } from '../../../../../common/framework/params_builder.js';import { makeTestGroup } from '../../../../../common/framework/test_group.js';import { keysOf } from '../../../../../common/util/data_tables.js';
-import { getGPU } from '../../../../../common/util/navigator_gpu.js';
+**/import { kUnitCaseParamsBuilder } from '../../../../../common/framework/params_builder.js';import { makeTestGroup } from '../../../../../common/framework/test_group.js';import { getGPU } from '../../../../../common/util/navigator_gpu.js';
 import { assert, range, reorder } from '../../../../../common/util/util.js';
-import { kLimitInfo } from '../../../../capability_info.js';
+import { kLimitInfo, kTextureFormatInfo } from '../../../../capability_info.js';
 import { GPUTestBase } from '../../../../gpu_test.js';
+import { align } from '../../../../util/math.js';
 
 
 
-const CreatePipelineTypes = {
-  createRenderPipeline: true,
-  createRenderPipelineWithFragmentStage: true,
-  createComputePipeline: true
-};
+export const kCreatePipelineTypes = [
+'createRenderPipeline',
+'createRenderPipelineWithFragmentStage',
+'createComputePipeline'];
 
-export const kCreatePipelineTypes = keysOf(CreatePipelineTypes);
 
-const CreatePipelineAsyncTypes = {
-  createRenderPipelineAsync: true,
-  createRenderPipelineAsyncWithFragmentStage: true,
-  createComputePipelineAsync: true
-};
 
-export const kCreatePipelineAsyncTypes = keysOf(CreatePipelineAsyncTypes);
+export const kRenderEncoderTypes = ['render', 'renderBundle'];
 
-const RenderEncoderTypes = {
-  render: true,
-  renderBundle: true
-};
 
-export const kRenderEncoderTypes = keysOf(RenderEncoderTypes);
+export const kEncoderTypes = ['compute', 'render', 'renderBundle'];
 
-const EncoderTypes = {
-  compute: true,
-  render: true,
-  renderBundle: true
-};
 
-export const kEncoderTypes = keysOf(EncoderTypes);
+export const kBindGroupTests = ['sameGroup', 'differentGroups'];
 
-const BindGroupTests = {
-  sameGroup: true,
-  differentGroups: true
-};
 
-export const kBindGroupTests = keysOf(BindGroupTests);
+export const kBindingCombinations = [
+'vertex',
+'fragment',
+'vertexAndFragmentWithPossibleVertexStageOverflow',
+'vertexAndFragmentWithPossibleFragmentStageOverflow',
+'compute'];
 
-const BindingCombinations = {
-  vertex: true,
-  fragment: true,
-  vertexAndFragmentWithPossibleVertexStageOverflow: true,
-  vertexAndFragmentWithPossibleFragmentStageOverflow: true,
-  compute: true
-};
 
-export const kBindingCombinations = keysOf(BindingCombinations);
 
 export function getPipelineTypeForBindingCombination(bindingCombination) {
   switch (bindingCombination) {
@@ -66,19 +43,6 @@ export function getPipelineTypeForBindingCombination(bindingCombination) {
       return 'createRenderPipelineWithFragmentStage';
     case 'compute':
       return 'createComputePipeline';}
-
-}
-
-export function getPipelineAsyncTypeForBindingCombination(bindingCombination) {
-  switch (bindingCombination) {
-    case 'vertex':
-      return 'createRenderPipelineAsync';
-    case 'fragment':
-    case 'vertexAndFragmentWithPossibleVertexStageOverflow':
-    case 'vertexAndFragmentWithPossibleFragmentStageOverflow':
-      return 'createRenderPipelineAsyncWithFragmentStage';
-    case 'compute':
-      return 'createComputePipelineAsync';}
 
 }
 
@@ -108,7 +72,22 @@ id)
   i)
   }) @binding(${i}) ${storageDefinitionWGSLSnippetFn(i, id)};`)).
 
-  join('\n');
+  join('\n        ');
+}
+
+/**
+ * Given an array of GPUColorTargetState return the number of bytes per sample
+ */
+export function computeBytesPerSample(targets) {
+  let bytesPerSample = 0;
+  for (const { format } of targets) {
+    const { renderTargetPixelByteCost, renderTargetComponentAlignment } = kTextureFormatInfo[
+    format];
+
+    const alignedBytesPerSample = align(bytesPerSample, renderTargetComponentAlignment);
+    bytesPerSample = alignedBytesPerSample + renderTargetPixelByteCost;
+  }
+  return bytesPerSample;
 }
 
 export function getPerStageWGSLForBindingCombinationImpl(
@@ -124,7 +103,9 @@ extraWGSL = '')
     case 'vertex':
       return `
         ${extraWGSL}
+
         ${getWGSLBindings(order, bindGroupTest, storageDefinitionWGSLSnippetFn, numBindings, 0)}
+
         @vertex fn mainVS() -> @builtin(position) vec4f {
           ${bodyFn(numBindings, 0)}
           return vec4f(0);
@@ -133,42 +114,50 @@ extraWGSL = '')
     case 'fragment':
       return `
         ${extraWGSL}
+
         ${getWGSLBindings(order, bindGroupTest, storageDefinitionWGSLSnippetFn, numBindings, 0)}
+
         @vertex fn mainVS() -> @builtin(position) vec4f {
           return vec4f(0);
         }
-        @fragment fn mainFS() -> @location(0) vec4f {
+
+        @fragment fn mainFS() {
           ${bodyFn(numBindings, 0)}
-          return vec4f(0);
         }
       `;
     case 'vertexAndFragmentWithPossibleVertexStageOverflow':{
         return `
         ${extraWGSL}
+
         ${getWGSLBindings(order, bindGroupTest, storageDefinitionWGSLSnippetFn, numBindings, 0)}
+
         ${getWGSLBindings(order, bindGroupTest, storageDefinitionWGSLSnippetFn, numBindings - 1, 1)}
+
         @vertex fn mainVS() -> @builtin(position) vec4f {
           ${bodyFn(numBindings, 0)}
           return vec4f(0);
         }
-        @fragment fn mainFS() -> @location(0) vec4f {
+
+        @fragment fn mainFS() {
           ${bodyFn(numBindings - 1, 1)}
-          return vec4f(0);
         }
       `;
       }
     case 'vertexAndFragmentWithPossibleFragmentStageOverflow':{
         return `
         ${extraWGSL}
+
         ${getWGSLBindings(order, bindGroupTest, storageDefinitionWGSLSnippetFn, numBindings - 1, 0)}
+
         ${getWGSLBindings(order, bindGroupTest, storageDefinitionWGSLSnippetFn, numBindings, 1)}
+
         @vertex fn mainVS() -> @builtin(position) vec4f {
           ${bodyFn(numBindings - 1, 0)}
           return vec4f(0);
         }
-        @fragment fn mainFS() -> @location(0) vec4f {
+
+        @fragment fn mainFS() {
           ${bodyFn(numBindings, 1)}
-          return vec4f(0);
         }
       `;
       }
@@ -200,7 +189,7 @@ extraWGSL = '')
   bindGroupTest,
   storageDefinitionWGSLSnippetFn,
   (numBindings, set) =>
-  `${range(numBindings, (i) => usageWGSLSnippetFn(i, set)).join('\n')}`,
+  `${range(numBindings, (i) => usageWGSLSnippetFn(i, set)).join('\n          ')}`,
   numBindings,
   extraWGSL);
 
@@ -220,34 +209,21 @@ extraWGSL = '')
   order,
   bindGroupTest,
   storageDefinitionWGSLSnippetFn,
-  (numBindings, set) => {
-    return bindingCombination === 'compute' ?
-    `${range(numBindings, (i) => usageWGSLSnippetFn(i, set)).join('\n')};` :
-    `${range(numBindings, (i) => usageWGSLSnippetFn(i, set)).join('\n')};`;
-  },
+  (numBindings, set) =>
+  `${range(numBindings, (i) => usageWGSLSnippetFn(i, set)).join('\n          ')};`,
   numBindings,
   extraWGSL);
 
 }
 
-// MAINTENANCE_TODO: rename LimitsModes to MaximumLimitsModes and update its derivatives.
-const LimitModes = {
-  defaultLimit: true,
-  maxLimit: true
-};
-
-export const kLimitModes = keysOf(LimitModes);
+export const kLimitModes = ['defaultLimit', 'adapterLimit'];
 
 
-// MAINTENANCE_TODO: rename TestValues to MaximumTestValues and update its derivatives.
-export const TestValues = {
-  atLimit: true,
-  overLimit: true
-};
 
-export const kTestValueKeys = keysOf(TestValues);
+export const kMaximumTestValues = ['atLimit', 'overLimit'];
 
-export function getTestValue(limit, testValue) {
+
+export function getMaximumTestValue(limit, testValue) {
   switch (testValue) {
     case 'atLimit':
       return limit;
@@ -256,23 +232,17 @@ export function getTestValue(limit, testValue) {
 
 }
 
-export const MinimumTestValues = {
-  atLimit: true,
-  underLimit: true
-};
+export const kMinimumTestValues = ['atLimit', 'underLimit'];
 
-export const kMinimumTestValueKeys = keysOf(MinimumTestValues);
 
-// MAINTENANCE_TODO: rename LimitValueTests to MaximumLimitValueTests and update its derivatives.
-export const LimitValueTests = {
-  atDefault: true,
-  underDefault: true,
-  betweenDefaultAndMaximum: true,
-  atMaximum: true,
-  overMaximum: true
-};
+export const kMaximumLimitValueTests = [
+'atDefault',
+'underDefault',
+'betweenDefaultAndMaximum',
+'atMaximum',
+'overMaximum'];
 
-export const kLimitValueTestKeys = keysOf(LimitValueTests);
+
 
 export function getLimitValue(
 defaultLimit,
@@ -293,21 +263,19 @@ limitValueTest)
 
 }
 
-export const MinimumLimitValueTests = {
-  atDefault: true,
-  overDefault: true,
-  betweenDefaultAndMinimum: true,
-  atMinimum: true,
-  underMinimum: true
-};
+export const kMinimumLimitValueTests = [
+'atDefault',
+'overDefault',
+'betweenDefaultAndMinimum',
+'atMinimum',
+'underMinimum'];
 
-export const kMinimumLimitValueTestKeys = keysOf(MinimumLimitValueTests);
+
 
 export function getDefaultLimit(limit) {
   return kLimitInfo[limit].default;
 }
 
-// MAINTENANCE_TODO: rename maximumLimit here and in LimitTestImpl to adapterLimit
 
 
 
@@ -333,22 +301,20 @@ const kMinimumLimits = new Set([
 /**
  * Adds the default parameters to a limit test
  */
-export const kLimitBaseParams = kUnitCaseParamsBuilder.
-combine('limitTest', kLimitValueTestKeys).
-beginSubcases().
-combine('testValueName', kTestValueKeys);
+export const kMaximumLimitBaseParams = kUnitCaseParamsBuilder.
+combine('limitTest', kMaximumLimitValueTests).
+combine('testValueName', kMaximumTestValues);
 
 export const kMinimumLimitBaseParams = kUnitCaseParamsBuilder.
-combine('limitTest', kMinimumLimitValueTestKeys).
-beginSubcases().
-combine('testValueName', kMinimumTestValueKeys);
+combine('limitTest', kMinimumLimitValueTests).
+combine('testValueName', kMinimumTestValues);
 
 export class LimitTestsImpl extends GPUTestBase {
   _adapter = null;
   _device = undefined;
   limit = '';
   defaultLimit = 0;
-  maximumLimit = 0;
+  adapterLimit = 0;
 
   async init() {
     await super.init();
@@ -356,9 +322,9 @@ export class LimitTestsImpl extends GPUTestBase {
     this._adapter = await gpu.requestAdapter();
     const limit = this.limit;
     this.defaultLimit = getDefaultLimit(limit);
-    this.maximumLimit = this.adapter.limits[limit];
+    this.adapterLimit = this.adapter.limits[limit];
     assert(!Number.isNaN(this.defaultLimit));
-    assert(!Number.isNaN(this.maximumLimit));
+    assert(!Number.isNaN(this.adapterLimit));
   }
 
   get adapter() {
@@ -374,22 +340,22 @@ export class LimitTestsImpl extends GPUTestBase {
   async requestDeviceWithLimits(
   adapter,
   requiredLimits,
-  shouldReject)
+  shouldReject,
+  requiredFeatures)
   {
     if (shouldReject) {
       this.shouldReject('OperationError', adapter.requestDevice({ requiredLimits }));
       return undefined;
     } else {
-      return await adapter.requestDevice({ requiredLimits });
+      return await adapter.requestDevice({ requiredLimits, requiredFeatures });
     }
   }
 
-  // MAINTENANCE_TODO: rename to getDefaultOrAdapterLimit
-  getDefaultOrMaximumLimit(limit, limitMode) {
+  getDefaultOrAdapterLimit(limit, limitMode) {
     switch (limitMode) {
       case 'defaultLimit':
         return getDefaultLimit(limit);
-      case 'maxLimit':
+      case 'adapterLimit':
         return this.adapter.limits[limit];}
 
   }
@@ -401,9 +367,10 @@ export class LimitTestsImpl extends GPUTestBase {
    */
   async _getDeviceWithSpecificLimit(
   requestedLimit,
-  extraLimits)
+  extraLimits,
+  features)
   {
-    const { adapter, limit, maximumLimit, defaultLimit } = this;
+    const { adapter, limit, adapterLimit, defaultLimit } = this;
 
     const requiredLimits = {};
     requiredLimits[limit] = requestedLimit;
@@ -419,31 +386,48 @@ export class LimitTestsImpl extends GPUTestBase {
     }
 
     const shouldReject = kMinimumLimits.has(limit) ?
-    requestedLimit < maximumLimit :
-    requestedLimit > maximumLimit;
+    requestedLimit < adapterLimit :
+    requestedLimit > adapterLimit;
 
-    const device = await this.requestDeviceWithLimits(adapter, requiredLimits, shouldReject);
+    const device = await this.requestDeviceWithLimits(
+    adapter,
+    requiredLimits,
+    shouldReject,
+    features);
+
     const actualLimit = device ? device.limits[limit] : 0;
 
     if (shouldReject) {
-      this.expect(!device);
+      this.expect(!device, 'expected no device');
     } else {
       if (kMinimumLimits.has(limit)) {
         if (requestedLimit <= defaultLimit) {
-          this.expect(actualLimit === requestedLimit);
+          this.expect(
+          actualLimit === requestedLimit,
+          `expected actual actualLimit: ${actualLimit} to equal defaultLimit: ${requestedLimit}`);
+
         } else {
-          this.expect(actualLimit === defaultLimit);
+          this.expect(
+          actualLimit === defaultLimit,
+          `expected actual actualLimit: ${actualLimit} to equal defaultLimit: ${defaultLimit}`);
+
         }
       } else {
         if (requestedLimit <= defaultLimit) {
-          this.expect(actualLimit === defaultLimit);
+          this.expect(
+          actualLimit === defaultLimit,
+          `expected actual actualLimit: ${actualLimit} to equal defaultLimit: ${defaultLimit}`);
+
         } else {
-          this.expect(actualLimit === requestedLimit);
+          this.expect(
+          actualLimit === requestedLimit,
+          `expected actual actualLimit: ${actualLimit} to equal requestedLimit: ${requestedLimit}`);
+
         }
       }
     }
 
-    return device ? { device, defaultLimit, maximumLimit, requestedLimit, actualLimit } : undefined;
+    return device ? { device, defaultLimit, adapterLimit, requestedLimit, actualLimit } : undefined;
   }
 
   /**
@@ -451,18 +435,19 @@ export class LimitTestsImpl extends GPUTestBase {
    * is correct or that the device failed to create if the requested limit is
    * beyond the maximum supported by the device.
    */
-  async _getDeviceWithRequestedLimit(
+  async _getDeviceWithRequestedMaximumLimit(
   limitValueTest,
-  extraLimits)
+  extraLimits,
+  features)
   {
-    const { defaultLimit, maximumLimit } = this;
+    const { defaultLimit, adapterLimit: maximumLimit } = this;
 
     const requestedLimit = getLimitValue(defaultLimit, maximumLimit, limitValueTest);
-    return this._getDeviceWithSpecificLimit(requestedLimit, extraLimits);
+    return this._getDeviceWithSpecificLimit(requestedLimit, extraLimits, features);
   }
 
   /**
-   * Call the given function and check no WebGPU errors are leaked
+   * Call the given function and check no WebGPU errors are leaked.
    */
   async _testThenDestroyDevice(
   deviceAndLimits,
@@ -488,9 +473,12 @@ export class LimitTestsImpl extends GPUTestBase {
     const outOfMemoryError = await device.popErrorScope();
     const internalError = await device.popErrorScope();
 
-    this.expect(!validationError, validationError?.message || '');
-    this.expect(!outOfMemoryError, outOfMemoryError?.message || '');
-    this.expect(!internalError, internalError?.message || '');
+    this.expect(!validationError, `unexpected validation error: ${validationError?.message || ''}`);
+    this.expect(
+    !outOfMemoryError,
+    `unexpected out-of-memory error: ${outOfMemoryError?.message || ''}`);
+
+    this.expect(!internalError, `unexpected internal error: ${internalError?.message || ''}`);
 
     device.destroy();
     this._device = undefined;
@@ -506,11 +494,16 @@ export class LimitTestsImpl extends GPUTestBase {
   deviceLimitValue,
   testValue,
   fn,
-  extraLimits)
+  extraLimits,
+  features)
   {
     assert(!this._device);
 
-    const deviceAndLimits = await this._getDeviceWithSpecificLimit(deviceLimitValue, extraLimits);
+    const deviceAndLimits = await this._getDeviceWithSpecificLimit(
+    deviceLimitValue,
+    extraLimits,
+    features);
+
     // If we request over the limit requestDevice will throw
     if (!deviceAndLimits) {
       return;
@@ -525,7 +518,7 @@ export class LimitTestsImpl extends GPUTestBase {
    * If the device is created then we call a test function, checking
    * that the function does not leak any GPU errors.
    */
-  async testDeviceWithRequestedLimits(
+  async testDeviceWithRequestedMaximumLimits(
   limitTest,
   testValueName,
   fn,
@@ -533,14 +526,14 @@ export class LimitTestsImpl extends GPUTestBase {
   {
     assert(!this._device);
 
-    const deviceAndLimits = await this._getDeviceWithRequestedLimit(limitTest, extraLimits);
+    const deviceAndLimits = await this._getDeviceWithRequestedMaximumLimit(limitTest, extraLimits);
     // If we request over the limit requestDevice will throw
     if (!deviceAndLimits) {
       return;
     }
 
     const { actualLimit } = deviceAndLimits;
-    const testValue = getTestValue(actualLimit, testValueName);
+    const testValue = getMaximumTestValue(actualLimit, testValueName);
 
     await this._testThenDestroyDevice(
     deviceAndLimits,
@@ -647,13 +640,9 @@ export class LimitTestsImpl extends GPUTestBase {
     return returnValue;
   }
 
-  getGroupIndexWGSLForPipelineType(
-  pipelineType,
-  groupIndex)
-  {
+  getGroupIndexWGSLForPipelineType(pipelineType, groupIndex) {
     switch (pipelineType) {
       case 'createRenderPipeline':
-      case 'createRenderPipelineAsync':
         return `
           @group(${groupIndex}) @binding(0) var<uniform> v: f32;
           @vertex fn mainVS() -> @builtin(position) vec4f {
@@ -661,7 +650,6 @@ export class LimitTestsImpl extends GPUTestBase {
           }
         `;
       case 'createRenderPipelineWithFragmentStage':
-      case 'createRenderPipelineAsyncWithFragmentStage':
         return `
           @group(${groupIndex}) @binding(0) var<uniform> v: f32;
           @vertex fn mainVS() -> @builtin(position) vec4f {
@@ -672,7 +660,6 @@ export class LimitTestsImpl extends GPUTestBase {
           }
         `;
       case 'createComputePipeline':
-      case 'createComputePipelineAsync':
         return `
           @group(${groupIndex}) @binding(0) var<uniform> v: f32;
           @compute @workgroup_size(1) fn main() {
@@ -683,13 +670,9 @@ export class LimitTestsImpl extends GPUTestBase {
 
   }
 
-  getBindingIndexWGSLForPipelineType(
-  pipelineType,
-  bindingIndex)
-  {
+  getBindingIndexWGSLForPipelineType(pipelineType, bindingIndex) {
     switch (pipelineType) {
       case 'createRenderPipeline':
-      case 'createRenderPipelineAsync':
         return `
           @group(0) @binding(${bindingIndex}) var<uniform> v: f32;
           @vertex fn mainVS() -> @builtin(position) vec4f {
@@ -697,7 +680,6 @@ export class LimitTestsImpl extends GPUTestBase {
           }
         `;
       case 'createRenderPipelineWithFragmentStage':
-      case 'createRenderPipelineAsyncWithFragmentStage':
         return `
           @group(0) @binding(${bindingIndex}) var<uniform> v: f32;
           @vertex fn mainVS() -> @builtin(position) vec4f {
@@ -708,7 +690,6 @@ export class LimitTestsImpl extends GPUTestBase {
           }
         `;
       case 'createComputePipeline':
-      case 'createComputePipelineAsync':
         return `
           @group(0) @binding(${bindingIndex}) var<uniform> v: f32;
           @compute @workgroup_size(1) fn main() {
@@ -742,7 +723,7 @@ export class LimitTestsImpl extends GPUTestBase {
           fragment: {
             module,
             entryPoint: 'mainFS',
-            targets: [{ format: 'rgba8unorm' }]
+            targets: [{ format: 'rgba8unorm', writeMask: 0 }]
           }
         });
         break;
@@ -758,11 +739,11 @@ export class LimitTestsImpl extends GPUTestBase {
 
   }
 
-  createPipelineAsync(createPipelineAsyncType, module) {
+  createPipelineAsync(createPipelineType, module) {
     const { device } = this;
 
-    switch (createPipelineAsyncType) {
-      case 'createRenderPipelineAsync':
+    switch (createPipelineType) {
+      case 'createRenderPipeline':
         return device.createRenderPipelineAsync({
           layout: 'auto',
           vertex: {
@@ -770,7 +751,7 @@ export class LimitTestsImpl extends GPUTestBase {
             entryPoint: 'mainVS'
           }
         });
-      case 'createRenderPipelineAsyncWithFragmentStage':
+      case 'createRenderPipelineWithFragmentStage':
         return device.createRenderPipelineAsync({
           layout: 'auto',
           vertex: {
@@ -780,10 +761,10 @@ export class LimitTestsImpl extends GPUTestBase {
           fragment: {
             module,
             entryPoint: 'mainFS',
-            targets: [{ format: 'rgba8unorm' }]
+            targets: [{ format: 'rgba8unorm', writeMask: 0 }]
           }
         });
-      case 'createComputePipelineAsync':
+      case 'createComputePipeline':
         return device.createComputePipelineAsync({
           layout: 'auto',
           compute: {
@@ -791,6 +772,90 @@ export class LimitTestsImpl extends GPUTestBase {
             entryPoint: 'main'
           }
         });}
+
+  }
+
+  async testCreatePipeline(
+  createPipelineType,
+  async,
+  module,
+  shouldError,
+  msg = '')
+  {
+    if (async) {
+      await this.expectValidationError(
+      () => {
+        this.createPipeline(createPipelineType, module);
+      },
+      shouldError,
+      msg);
+
+    } else {
+      await this.shouldRejectConditionally(
+      'GPUPipelineError',
+      this.createPipelineAsync(createPipelineType, module),
+      shouldError,
+      msg);
+
+    }
+  }
+
+  async testCreateRenderPipeline(
+  pipelineDescriptor,
+  async,
+  shouldError,
+  msg = '')
+  {
+    const { device } = this;
+    if (async) {
+      await this.shouldRejectConditionally(
+      'GPUPipelineError',
+      device.createRenderPipelineAsync(pipelineDescriptor),
+      shouldError,
+      msg);
+
+    } else {
+      await this.expectValidationError(
+      () => {
+        device.createRenderPipeline(pipelineDescriptor);
+      },
+      shouldError,
+      msg);
+
+    }
+  }
+
+  async testMaxComputeWorkgroupSize(
+  limitTest,
+  testValueName,
+  async,
+  axis)
+  {
+    const kExtraLimits = {
+      maxComputeInvocationsPerWorkgroup: 'adapterLimit'
+    };
+
+    await this.testDeviceWithRequestedMaximumLimits(
+    limitTest,
+    testValueName,
+    async ({ device, testValue, actualLimit, shouldError }) => {
+      if (testValue > device.limits.maxComputeInvocationsPerWorkgroup) {
+        return;
+      }
+
+      const size = [1, 1, 1];
+      size[axis.codePointAt(0) - 'X'.codePointAt(0)] = testValue;
+      const { module, code } = this.getModuleForWorkgroupSize(size);
+
+      await this.testCreatePipeline(
+      'createComputePipeline',
+      async,
+      module,
+      shouldError,
+      `size: ${testValue}, limit: ${actualLimit}\n${code}`);
+
+    },
+    kExtraLimits);
 
   }
 
@@ -994,6 +1059,18 @@ export class LimitTestsImpl extends GPUTestBase {
     prep();
 
     await this.expectValidationError(test, shouldError, msg);
+  }
+
+  getModuleForWorkgroupSize(size) {
+    const { device } = this;
+    const code = `
+      @group(0) @binding(0) var<storage, read_write> d: f32;
+      @compute @workgroup_size(${size.join(',')}) fn main() {
+        d = 0;
+      }
+    `;
+    const module = device.createShaderModule({ code });
+    return { module, code };
   }
 }
 

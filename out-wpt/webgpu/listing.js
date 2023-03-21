@@ -154,7 +154,16 @@ export const listing = [
       "command_buffer",
       "queries"
     ],
-    "readme": "TODO: test the behavior of creating/using/resolving queries.\n- occlusion\n- pipeline statistics\n  TODO: pipeline statistics queries are removed from core; consider moving tests to another suite.\n- timestamp\n- nested (e.g. timestamp or PS query inside occlusion query), if any such cases are valid. Try\n  writing to the same query set (at same or different indices), if valid. Check results make sense.\n- start a query (all types) with no draw calls"
+    "readme": "TODO: test the behavior of creating/using/resolving queries.\n- pipeline statistics\n  TODO: pipeline statistics queries are removed from core; consider moving tests to another suite.\n- timestamp\n- nested (e.g. timestamp or PS query inside occlusion query), if any such cases are valid. Try\n  writing to the same query set (at same or different indices), if valid. Check results make sense.\n- start a query (all types) with no draw calls"
+  },
+  {
+    "file": [
+      "api",
+      "operation",
+      "command_buffer",
+      "queries",
+      "occlusionQuery"
+    ]
   },
   {
     "file": [
@@ -674,6 +683,60 @@ export const listing = [
       "validation",
       "capability_checks",
       "limits",
+      "maxComputeInvocationsPerWorkgroup"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxComputeWorkgroupSizeX"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxComputeWorkgroupSizeY"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxComputeWorkgroupSizeZ"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxComputeWorkgroupStorageSize"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxComputeWorkgroupsPerDimension"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
       "maxDynamicStorageBuffersPerPipelineLayout"
     ]
   },
@@ -684,6 +747,15 @@ export const listing = [
       "capability_checks",
       "limits",
       "maxDynamicUniformBuffersPerPipelineLayout"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "limits",
+      "maxFragmentCombinedOutputResources"
     ]
   },
   {
@@ -1254,7 +1326,25 @@ export const listing = [
       "validation",
       "queue",
       "destroyed",
+      "buffer"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "queue",
+      "destroyed",
       "query_set"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "queue",
+      "destroyed",
+      "texture"
     ]
   },
   {
@@ -1311,14 +1401,6 @@ export const listing = [
       "validation",
       "render_pass",
       "resolve"
-    ]
-  },
-  {
-    "file": [
-      "api",
-      "validation",
-      "render_pass",
-      "storeOp"
     ]
   },
   {
@@ -1540,7 +1622,9 @@ export const listing = [
     "file": [
       "shader",
       "execution",
-      "evaluation_order"
+      "expression",
+      "binary",
+      "bitwise"
     ]
   },
   {
@@ -1549,7 +1633,7 @@ export const listing = [
       "execution",
       "expression",
       "binary",
-      "bitwise"
+      "bitwise_shift"
     ]
   },
   {
@@ -1576,7 +1660,7 @@ export const listing = [
       "execution",
       "expression",
       "binary",
-      "f32_logical"
+      "f32_comparison"
     ]
   },
   {
@@ -1603,7 +1687,25 @@ export const listing = [
       "execution",
       "expression",
       "binary",
+      "i32_comparison"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "expression",
+      "binary",
       "u32_arithmetic"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "expression",
+      "binary",
+      "u32_comparison"
     ]
   },
   {
@@ -2702,6 +2804,15 @@ export const listing = [
       "execution",
       "expression",
       "unary",
+      "bool_conversion"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "expression",
+      "unary",
       "bool_logical"
     ]
   },
@@ -2720,7 +2831,52 @@ export const listing = [
       "execution",
       "expression",
       "unary",
+      "f32_conversion"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "expression",
+      "unary",
       "i32_arithmetic"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "expression",
+      "unary",
+      "i32_complement"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "expression",
+      "unary",
+      "i32_conversion"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "expression",
+      "unary",
+      "u32_complement"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "expression",
+      "unary",
+      "u32_conversion"
     ]
   },
   {
@@ -2729,6 +2885,22 @@ export const listing = [
       "execution",
       "flow_control",
       "call"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "flow_control",
+      "complex"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "flow_control",
+      "eval_order"
     ]
   },
   {
@@ -2753,6 +2925,14 @@ export const listing = [
       "execution",
       "flow_control",
       "loop"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "flow_control",
+      "phony"
     ]
   },
   {
@@ -2852,6 +3032,14 @@ export const listing = [
     "file": [
       "shader",
       "execution",
+      "statement",
+      "increment_decrement"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
       "zero_init"
     ]
   },
@@ -2875,6 +3063,25 @@ export const listing = [
       "validation",
       "const_assert",
       "const_assert"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "expression",
+      "binary",
+      "bitwise_shift"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "expression",
+      "call",
+      "builtin",
+      "atomics"
     ]
   },
   {

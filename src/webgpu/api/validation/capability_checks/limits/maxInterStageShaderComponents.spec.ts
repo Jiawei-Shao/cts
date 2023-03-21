@@ -1,6 +1,6 @@
 import { assert, range } from '../../../../../common/util/util.js';
 
-import { kLimitBaseParams, makeLimitTestGroup } from './limit_utils.js';
+import { kMaximumLimitBaseParams, makeLimitTestGroup } from './limit_utils.js';
 
 function getTypeForNumComponents(numComponents: number) {
   return numComponents > 1 ? `vec${numComponents}f` : 'f32';
@@ -92,9 +92,10 @@ const limit = 'maxInterStageShaderComponents';
 export const { g, description } = makeLimitTestGroup(limit);
 
 g.test('createRenderPipeline,at_over')
-  .desc(`Test using at and over ${limit} limit in createRenderPipeline`)
+  .desc(`Test using at and over ${limit} limit in createRenderPipeline(Async)`)
   .params(
-    kLimitBaseParams
+    kMaximumLimitBaseParams
+      .combine('async', [false, true])
       .combine('pointList', [false, true])
       .combine('frontFacing', [false, true])
       .combine('sampleIndex', [false, true])
@@ -105,13 +106,14 @@ g.test('createRenderPipeline,at_over')
     const {
       limitTest,
       testValueName,
+      async,
       pointList,
       frontFacing,
       sampleIndex,
       sampleMaskIn,
       sampleMaskOut,
     } = t.params;
-    await t.testDeviceWithRequestedLimits(
+    await t.testDeviceWithRequestedMaximumLimits(
       limitTest,
       testValueName,
       async ({ device, testValue, shouldError }) => {
@@ -125,56 +127,7 @@ g.test('createRenderPipeline,at_over')
           sampleMaskOut
         );
 
-        await t.expectValidationError(
-          () => {
-            device.createRenderPipeline(pipelineDescriptor);
-          },
-          shouldError,
-          code
-        );
-      }
-    );
-  });
-
-g.test('createRenderPipelineAsync,at_over')
-  .desc(`Test using at and over ${limit} limit in createRenderPipelineAsync`)
-  .params(
-    kLimitBaseParams
-      .combine('pointList', [false, true])
-      .combine('frontFacing', [false, true])
-      .combine('sampleIndex', [false, true])
-      .combine('sampleMaskIn', [false, true])
-      .combine('sampleMaskOut', [false, true])
-  )
-  .fn(async t => {
-    const {
-      limitTest,
-      testValueName,
-      pointList,
-      frontFacing,
-      sampleIndex,
-      sampleMaskIn,
-      sampleMaskOut,
-    } = t.params;
-    await t.testDeviceWithRequestedLimits(
-      limitTest,
-      testValueName,
-      async ({ device, testValue, shouldError }) => {
-        const { pipelineDescriptor, code } = getPipelineDescriptor(
-          device,
-          testValue,
-          pointList,
-          frontFacing,
-          sampleIndex,
-          sampleMaskIn,
-          sampleMaskOut
-        );
-        await t.shouldRejectConditionally(
-          'GPUPipelineError',
-          device.createRenderPipelineAsync(pipelineDescriptor),
-          shouldError,
-          code
-        );
+        await t.testCreateRenderPipeline(pipelineDescriptor, async, shouldError, code);
       }
     );
   });

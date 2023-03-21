@@ -20,6 +20,7 @@ import {
   cartesianProduct,
   correctlyRoundedF32,
   FlushMode,
+  frexp,
   fullF16Range,
   fullF32Range,
   fullI32Range,
@@ -385,10 +386,10 @@ g.test('correctlyRoundedF32')
       { value: kValue.f32.subnormal.negative.max, expected: [kValue.f32.subnormal.negative.max] },
 
       // 64-bit subnormals
-      { value: hexToF64(0x00000000, 0x00000001), expected: [0, kValue.f32.subnormal.positive.min] },
-      { value: hexToF64(0x00000000, 0x00000002), expected: [0, kValue.f32.subnormal.positive.min] },
-      { value: hexToF64(0x800fffff, 0xffffffff), expected: [kValue.f32.subnormal.negative.max, 0] },
-      { value: hexToF64(0x800fffff, 0xfffffffe), expected: [kValue.f32.subnormal.negative.max, 0] },
+      { value: hexToF64(0x0000_0000_0000_0001n), expected: [0, kValue.f32.subnormal.positive.min] },
+      { value: hexToF64(0x0000_0000_0000_0002n), expected: [0, kValue.f32.subnormal.positive.min] },
+      { value: hexToF64(0x800f_ffff_ffff_ffffn), expected: [kValue.f32.subnormal.negative.max, 0] },
+      { value: hexToF64(0x800f_ffff_ffff_fffen), expected: [kValue.f32.subnormal.negative.max, 0] },
 
       // 32-bit normals
       { value: 0, expected: [0] },
@@ -400,14 +401,14 @@ g.test('correctlyRoundedF32')
       { value: hexToF32(0x83800001), expected: [hexToF32(0x83800001)] },
 
       // 64-bit normals
-      { value: hexToF64(0x3ff00000, 0x00000001), expected: [hexToF32(0x3f800000), hexToF32(0x3f800001)] },
-      { value: hexToF64(0x3ff00000, 0x00000002), expected: [hexToF32(0x3f800000), hexToF32(0x3f800001)] },
-      { value: hexToF64(0x3ff00010, 0x00000010), expected: [hexToF32(0x3f800080), hexToF32(0x3f800081)] },
-      { value: hexToF64(0x3ff00020, 0x00000020), expected: [hexToF32(0x3f800100), hexToF32(0x3f800101)] },
-      { value: hexToF64(0xbff00000, 0x00000001), expected: [hexToF32(0xbf800001), hexToF32(0xbf800000)] },
-      { value: hexToF64(0xbff00000, 0x00000002), expected: [hexToF32(0xbf800001), hexToF32(0xbf800000)] },
-      { value: hexToF64(0xbff00010, 0x00000010), expected: [hexToF32(0xbf800081), hexToF32(0xbf800080)] },
-      { value: hexToF64(0xbff00020, 0x00000020), expected: [hexToF32(0xbf800101), hexToF32(0xbf800100)] },
+      { value: hexToF64(0x3ff0_0000_0000_0001n), expected: [hexToF32(0x3f800000), hexToF32(0x3f800001)] },
+      { value: hexToF64(0x3ff0_0000_0000_0002n), expected: [hexToF32(0x3f800000), hexToF32(0x3f800001)] },
+      { value: hexToF64(0x3ff0_0010_0000_0010n), expected: [hexToF32(0x3f800080), hexToF32(0x3f800081)] },
+      { value: hexToF64(0x3ff0_0020_0000_0020n), expected: [hexToF32(0x3f800100), hexToF32(0x3f800101)] },
+      { value: hexToF64(0xbff0_0000_0000_0001n), expected: [hexToF32(0xbf800001), hexToF32(0xbf800000)] },
+      { value: hexToF64(0xbff0_0000_0000_0002n), expected: [hexToF32(0xbf800001), hexToF32(0xbf800000)] },
+      { value: hexToF64(0xbff0_0010_0000_0010n), expected: [hexToF32(0xbf800081), hexToF32(0xbf800080)] },
+      { value: hexToF64(0xbff0_0020_0000_0020n), expected: [hexToF32(0xbf800101), hexToF32(0xbf800100)] },
     ]
   )
   .fn(t => {
@@ -418,6 +419,46 @@ g.test('correctlyRoundedF32')
     t.expect(
       objectEquals(expected, got),
       `correctlyRoundedF32(${value}) returned [${got}]. Expected [${expected}]`
+    );
+  });
+
+interface frexpCase {
+  input: number;
+  fract: number;
+  exp: number;
+}
+
+g.test('frexp')
+  .paramsSimple<frexpCase>([
+    { input: 0, fract: 0, exp: 0 },
+    { input: -0, fract: -0, exp: 0 },
+    { input: Number.POSITIVE_INFINITY, fract: Number.POSITIVE_INFINITY, exp: 0 },
+    { input: Number.NEGATIVE_INFINITY, fract: Number.NEGATIVE_INFINITY, exp: 0 },
+    { input: 0.5, fract: 0.5, exp: 0 },
+    { input: -0.5, fract: -0.5, exp: 0 },
+    { input: 1, fract: 0.5, exp: 1 },
+    { input: -1, fract: -0.5, exp: 1 },
+    { input: 2, fract: 0.5, exp: 2 },
+    { input: -2, fract: -0.5, exp: 2 },
+    { input: 10000, fract: 0.6103515625, exp: 14 },
+    { input: -10000, fract: -0.6103515625, exp: 14 },
+    { input: kValue.f32.positive.max, fract: 0.9999999403953552, exp: 128 },
+    { input: kValue.f32.positive.min, fract: 0.5, exp: -125 },
+    { input: kValue.f32.negative.max, fract: -0.5, exp: -125 },
+    { input: kValue.f32.negative.min, fract: -0.9999999403953552, exp: 128 },
+    { input: kValue.f32.subnormal.positive.max, fract: 0.9999998807907104, exp: -126 },
+    { input: kValue.f32.subnormal.positive.min, fract: 0.5, exp: -148 },
+    { input: kValue.f32.subnormal.negative.max, fract: -0.5, exp: -148 },
+    { input: kValue.f32.subnormal.negative.min, fract: -0.9999998807907104, exp: -126 },
+  ])
+  .fn(test => {
+    const input = test.params.input;
+    const got = frexp(input);
+    const expect = { fract: test.params.fract, exp: test.params.exp };
+
+    test.expect(
+      objectEquals(got, expect),
+      `frexp(${input}) returned { fract: ${got.fract}, exp: ${got.exp} }. Expected { fract: ${expect.fract}, exp: ${expect.exp} }`
     );
   });
 

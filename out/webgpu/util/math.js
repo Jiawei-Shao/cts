@@ -431,6 +431,59 @@ export function correctlyRoundedF16(n) {
 }
 
 /**
+ * Once-allocated ArrayBuffer/views to avoid overhead of allocation in frexp
+ *
+ * This makes frexp non-reentrant due to shared state between calls.
+ */
+const frexpData = new ArrayBuffer(4);
+const frexpDataU32 = new Uint32Array(frexpData);
+const frexpDataF32 = new Float32Array(frexpData);
+
+/**
+ * Calculates WGSL frexp
+ *
+ * Splits val into a fraction and an exponent so that
+ * val = fraction * 2 ^ exponent.
+ * The fraction is 0.0 or its magnitude is in the range [0.5, 1.0).
+ *
+ * Inspired by golang's implementation of frexp.
+ *
+ * This code is non-reentrant due to the use of a non-local data buffer and
+ * views.
+ *
+ * @param val the f32 to split
+ * @returns the results of splitting val
+ */
+export function frexp(val) {
+  frexpDataF32[0] = val;
+  // Do not directly use val after this point, so that changes are reflected in
+  // both the f32 and u32 views.
+
+  // Handles 0 and -0
+  if (frexpDataF32[0] === 0) {
+    return { fract: frexpDataF32[0], exp: 0 };
+  }
+
+  // Covers NaNs, OOB and Infinities
+  if (!isFiniteF32(frexpDataF32[0])) {
+    return { fract: frexpDataF32[0], exp: 0 };
+  }
+
+  // Normalize if subnormal
+  let exp = 0;
+  if (isSubnormalNumberF32(frexpDataF32[0])) {
+    frexpDataF32[0] = frexpDataF32[0] * (1 << 23);
+    exp = -23;
+  }
+  exp += (frexpDataU32[0] >> 23 & 0xff) - 126; // shift & mask, minus the bias + 1
+
+  frexpDataU32[0] &= 0x807fffff; // mask the exponent bits
+  frexpDataU32[0] |= 0x3f000000; // extract the mantissa bits
+  const fract = frexpDataF32[0]; // Convert from bits to number
+  return { fract, exp };
+}
+
+/**
  * Calculates the linear interpolation between two values of a given fractional.
  *
  * If |t| is 0, |a| is returned, if |t| is 1, |b| is returned, otherwise
@@ -894,7 +947,7 @@ const kSparseMatrixF32Values = {
 
     3: kInterestingF32Values.map((f, idx) => [
     [idx % 9 === 0 ? f : idx, idx % 9 === 1 ? f : -idx, idx % 9 === 2 ? f : idx],
-    [idx % 9 === 3 ? f : -idx, idx % 9 === 4 ? f : idx, -idx % 9 === 5 ? f : -idx],
+    [idx % 9 === 3 ? f : -idx, idx % 9 === 4 ? f : idx, idx % 9 === 5 ? f : -idx],
     [idx % 9 === 6 ? f : idx, idx % 9 === 7 ? f : -idx, idx % 9 === 8 ? f : idx]]),
 
     4: kInterestingF32Values.map((f, idx) => [
@@ -927,16 +980,16 @@ const kSparseMatrixF32Values = {
 
     3: kInterestingF32Values.map((f, idx) => [
     [idx % 12 === 0 ? f : idx, idx % 12 === 1 ? f : -idx, idx % 12 === 2 ? f : idx],
-    [idx % 12 === 3 ? f : -idx, idx % 12 === 4 ? f : idx, -idx % 12 === 5 ? f : -idx],
+    [idx % 12 === 3 ? f : -idx, idx % 12 === 4 ? f : idx, idx % 12 === 5 ? f : -idx],
     [idx % 12 === 6 ? f : idx, idx % 12 === 7 ? f : -idx, idx % 12 === 8 ? f : idx],
-    [idx % 12 === 9 ? f : -idx, idx % 12 === 10 ? f : idx, -idx % 12 === 11 ? f : idx]]),
+    [idx % 12 === 9 ? f : -idx, idx % 12 === 10 ? f : idx, idx % 12 === 11 ? f : -idx]]),
 
     4: kInterestingF32Values.map((f, idx) => [
     [
     idx % 16 === 0 ? f : idx,
     idx % 16 === 1 ? f : -idx,
     idx % 16 === 2 ? f : idx,
-    idx % 16 === 3 ? f : idx],
+    idx % 16 === 3 ? f : -idx],
 
     [
     idx % 16 === 4 ? f : -idx,
@@ -1074,13 +1127,9 @@ export function hexToF16(hex) {
   return floatBitsToNumber(hex, kFloat16Format);
 }
 
-/** Converts two 32-bit hex values to a 64-bit float value */
-export function hexToF64(h32, l32) {
-  const u32Arr = new Uint32Array(2);
-  u32Arr[0] = l32;
-  u32Arr[1] = h32;
-  const f64Arr = new Float64Array(u32Arr.buffer);
-  return f64Arr[0];
+/** Converts 64-bit hex value to a 64-bit float value */
+export function hexToF64(hex) {
+  return new Float64Array(new BigInt64Array([hex]).buffer)[0];
 }
 
 /** @returns the cross of an array with the intermediate result of cartesianProduct
@@ -1127,6 +1176,14 @@ export function cartesianProduct(...inputs) {
  *
  * Recursively calculates all of the permutations, does not cull duplicate
  * entries.
+ *
+ * Only feasible for inputs of lengths 5 or so, since the number of permutations
+ * is (input.length)!, so will cause the stack to explode for longer inputs.
+ *
+ * This code could be made iterative using something like
+ * Steinhaus–Johnson–Trotter and additionally turned into a generator to reduce
+ * the stack size, but there is still a fundamental combinatorial explosion
+ * here that will affect runtime.
  *
  * @param input the array to get permutations of
  */

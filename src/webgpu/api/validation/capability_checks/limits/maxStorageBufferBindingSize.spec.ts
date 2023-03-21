@@ -1,20 +1,16 @@
-import { keysOf } from '../../../../../common/util/data_tables.js';
 import { align, roundDown } from '../../../../util/math.js';
 
 import {
-  kLimitBaseParams,
+  kMaximumLimitBaseParams,
   makeLimitTestGroup,
-  LimitValueTest,
-  TestValue,
-  kLimitValueTestKeys,
+  LimitMode,
+  getDefaultLimit,
+  MaximumLimitValueTest,
+  MaximumTestValue,
 } from './limit_utils.js';
 
-const BufferParts = {
-  wholeBuffer: true,
-  biggerBufferWithOffset: true,
-};
-type BufferPart = keyof typeof BufferParts;
-const kBufferPartsKeys = keysOf(BufferParts);
+const kBufferParts = ['wholeBuffer', 'biggerBufferWithOffset'] as const;
+type BufferPart = typeof kBufferParts[number];
 
 function getSizeAndOffsetForBufferPart(device: GPUDevice, bufferPart: BufferPart, size: number) {
   const align = device.limits.minUniformBufferOffsetAlignment;
@@ -28,8 +24,11 @@ function getSizeAndOffsetForBufferPart(device: GPUDevice, bufferPart: BufferPart
 
 const kStorageBufferRequiredSizeAlignment = 4;
 
+// We also need to update the maxBufferSize limit when testing.
+const kExtraLimits = { maxBufferSize: 'maxLimit' as LimitMode };
+
 function getDeviceLimitToRequest(
-  limitValueTest: LimitValueTest,
+  limitValueTest: MaximumLimitValueTest,
   defaultLimit: number,
   maximumLimit: number
 ) {
@@ -47,7 +46,7 @@ function getDeviceLimitToRequest(
   }
 }
 
-function getTestValue(testValueName: TestValue, requestedLimit: number) {
+function getTestValue(testValueName: MaximumTestValue, requestedLimit: number) {
   switch (testValueName) {
     case 'atLimit':
       return roundDown(requestedLimit, kStorageBufferRequiredSizeAlignment);
@@ -61,8 +60,8 @@ function getTestValue(testValueName: TestValue, requestedLimit: number) {
 }
 
 function getDeviceLimitToRequestAndValueToTest(
-  limitValueTest: LimitValueTest,
-  testValueName: TestValue,
+  limitValueTest: MaximumLimitValueTest,
+  testValueName: MaximumTestValue,
   defaultLimit: number,
   maximumLimit: number
 ) {
@@ -78,10 +77,10 @@ export const { g, description } = makeLimitTestGroup(limit);
 
 g.test('createBindGroup,at_over')
   .desc(`Test using createBindGroup at and over ${limit} limit`)
-  .params(kLimitBaseParams.combine('bufferPart', kBufferPartsKeys))
+  .params(kMaximumLimitBaseParams.combine('bufferPart', kBufferParts))
   .fn(async t => {
     const { limitTest, testValueName, bufferPart } = t.params;
-    const { defaultLimit, maximumLimit } = t;
+    const { defaultLimit, adapterLimit: maximumLimit } = t;
     const { requestedLimit, testValue } = getDeviceLimitToRequestAndValueToTest(
       limitTest,
       testValueName,
@@ -104,6 +103,13 @@ g.test('createBindGroup,at_over')
         });
 
         const { size, offset } = getSizeAndOffsetForBufferPart(device, bufferPart, testValue);
+
+        // If the size of the buffer exceeds the related but separate maxBufferSize limit, we can
+        // skip the validation since the allocation will fail with a validation error.
+        if (size > device.limits.maxBufferSize) {
+          return;
+        }
+
         device.pushErrorScope('out-of-memory');
         const storageBuffer = t.trackForCleanup(
           device.createBuffer({
@@ -134,19 +140,15 @@ g.test('createBindGroup,at_over')
             `size: ${size}, offset: ${offset}, testValue: ${testValue}`
           );
         }
-      }
+      },
+      kExtraLimits
     );
   });
 
 g.test('validate,maxBufferSize')
   .desc(`Test that ${limit} <= maxBufferSize`)
-  .params(u => u.combine('limitTest', kLimitValueTestKeys))
-  .fn(async t => {
-    const { limitTest } = t.params;
-    const { defaultLimit, maximumLimit } = t;
-    const requestedLimit = getDeviceLimitToRequest(limitTest, defaultLimit, maximumLimit);
-
-    await t.testDeviceWithSpecificLimits(requestedLimit, 0, ({ device, actualLimit }) => {
-      t.expect(actualLimit <= device.limits.maxBufferSize);
-    });
+  .fn(t => {
+    const { adapter, defaultLimit, adapterLimit } = t;
+    t.expect(defaultLimit <= getDefaultLimit('maxBufferSize'));
+    t.expect(adapterLimit <= adapter.limits.maxBufferSize);
   });

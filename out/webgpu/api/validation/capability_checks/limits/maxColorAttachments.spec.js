@@ -1,6 +1,6 @@
 /**
 * AUTO-GENERATED - DO NOT EDIT. Source: https://github.com/gpuweb/cts
-**/import { range } from '../../../../../common/util/util.js';import { kLimitBaseParams, getDefaultLimit, makeLimitTestGroup } from './limit_utils.js';
+**/import { range } from '../../../../../common/util/util.js';import { kMaximumLimitBaseParams, getDefaultLimit, makeLimitTestGroup } from './limit_utils.js';
 
 function getPipelineDescriptor(device, testValue) {
   const code = `
@@ -31,48 +31,27 @@ const limit = 'maxColorAttachments';
 export const { g, description } = makeLimitTestGroup(limit);
 
 g.test('createRenderPipeline,at_over').
-desc(`Test using at and over ${limit} limit in createRenderPipeline`).
-params(kLimitBaseParams).
+desc(`Test using at and over ${limit} limit in createRenderPipeline(Async)`).
+params(kMaximumLimitBaseParams.combine('async', [false, true])).
 fn(async (t) => {
-  const { limitTest, testValueName } = t.params;
-  await t.testDeviceWithRequestedLimits(
+  const { limitTest, testValueName, async } = t.params;
+  await t.testDeviceWithRequestedMaximumLimits(
   limitTest,
   testValueName,
   async ({ device, testValue, shouldError }) => {
     const pipelineDescriptor = getPipelineDescriptor(device, testValue);
 
-    await t.expectValidationError(() => {
-      device.createRenderPipeline(pipelineDescriptor);
-    }, shouldError);
-  });
-
-});
-
-g.test('createRenderPipelineAsync,at_over').
-desc(`Test using at and over ${limit} limit in createRenderPipelineAsync`).
-params(kLimitBaseParams).
-fn(async (t) => {
-  const { limitTest, testValueName } = t.params;
-  await t.testDeviceWithRequestedLimits(
-  limitTest,
-  testValueName,
-  async ({ device, testValue, shouldError }) => {
-    const pipelineDescriptor = getPipelineDescriptor(device, testValue);
-    await t.shouldRejectConditionally(
-    'GPUPipelineError',
-    device.createRenderPipelineAsync(pipelineDescriptor),
-    shouldError);
-
+    await t.testCreateRenderPipeline(pipelineDescriptor, async, shouldError);
   });
 
 });
 
 g.test('beginRenderPass,at_over').
 desc(`Test using at and over ${limit} limit in beginRenderPass`).
-params(kLimitBaseParams).
+params(kMaximumLimitBaseParams).
 fn(async (t) => {
   const { limitTest, testValueName } = t.params;
-  await t.testDeviceWithRequestedLimits(
+  await t.testDeviceWithRequestedMaximumLimits(
   limitTest,
   testValueName,
   async ({ device, testValue, shouldError }) => {
@@ -106,10 +85,10 @@ fn(async (t) => {
 
 g.test('createRenderBundle,at_over').
 desc(`Test using at and over ${limit} limit in createRenderBundle`).
-params(kLimitBaseParams).
+params(kMaximumLimitBaseParams).
 fn(async (t) => {
   const { limitTest, testValueName } = t.params;
-  await t.testDeviceWithRequestedLimits(
+  await t.testDeviceWithRequestedMaximumLimits(
   limitTest,
   testValueName,
   async ({ device, testValue, shouldError }) => {
@@ -122,14 +101,25 @@ fn(async (t) => {
 
 });
 
-g.test('validate').
+g.test('validate,maxColorAttachmentBytesPerSample').
 desc(`Test ${limit} against maxColorAttachmentBytesPerSample`).
 fn((t) => {
-  const { adapter, defaultLimit, maximumLimit } = t;
+  const { adapter, defaultLimit, adapterLimit: maximumLimit } = t;
   const minColorAttachmentBytesPerSample = getDefaultLimit('maxColorAttachmentBytesPerSample');
   // The smallest attachment is 1 byte
   // so make sure maxColorAttachments < maxColorAttachmentBytesPerSample
   t.expect(defaultLimit <= minColorAttachmentBytesPerSample);
   t.expect(maximumLimit <= adapter.limits.maxColorAttachmentBytesPerSample);
+});
+
+g.test('validate,maxFragmentCombineOutputResources').
+desc(`Test ${limit} against maxFragmentCombineOutputResources`).
+fn((t) => {
+  const { adapter, defaultLimit, adapterLimit: maximumLimit } = t;
+  const minFragmentCombinedOutputResources = getDefaultLimit(
+  'maxFragmentCombinedOutputResources');
+
+  t.expect(defaultLimit <= minFragmentCombinedOutputResources);
+  t.expect(maximumLimit <= adapter.limits.maxFragmentCombinedOutputResources);
 });
 //# sourceMappingURL=maxColorAttachments.spec.js.map
