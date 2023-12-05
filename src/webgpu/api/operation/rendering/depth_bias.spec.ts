@@ -6,10 +6,10 @@ Tests render results with different depth bias values like 'positive', 'negative
 import { makeTestGroup } from '../../../../common/framework/test_group.js';
 import { unreachable } from '../../../../common/util/util.js';
 import {
+  kTextureFormatInfo,
   DepthStencilFormat,
   EncodableTextureFormat,
-  kTextureFormatInfo,
-} from '../../../capability_info.js';
+} from '../../../format_info.js';
 import { GPUTest, TextureTestMixin } from '../../../gpu_test.js';
 import { TexelView } from '../../../util/texture/texel_view.js';
 
@@ -175,7 +175,7 @@ class DepthBiasTest extends TextureTestMixin(GPUTest) {
     });
 
     const expColor = { Depth: _expectedDepth };
-    const expTexelView = TexelView.fromTexelsAsColors(depthFormat, coords => expColor);
+    const expTexelView = TexelView.fromTexelsAsColors(depthFormat, _coords => expColor);
     this.expectTexelViewComparisonIsOkInTexture({ texture: depthTexture }, expTexelView, [1, 1]);
   }
 
@@ -210,7 +210,7 @@ class DepthBiasTest extends TextureTestMixin(GPUTest) {
       B: _expectedColor[2],
       A: _expectedColor[3],
     };
-    const expTexelView = TexelView.fromTexelsAsColors(renderTargetFormat, coords => expColor);
+    const expTexelView = TexelView.fromTexelsAsColors(renderTargetFormat, _coords => expColor);
     this.expectTexelViewComparisonIsOkInTexture({ texture: renderTarget }, expTexelView, [1, 1]);
   }
 

@@ -3,7 +3,8 @@
 **/export const description = `
 Destroying a texture more than once is allowed.
 `;import { makeTestGroup } from '../../../../common/framework/test_group.js';
-import { kTextureAspects, kTextureFormatInfo } from '../../../capability_info.js';
+import { kTextureAspects } from '../../../capability_info.js';
+import { kTextureFormatInfo } from '../../../format_info.js';
 import { ValidationTest } from '../validation_test.js';
 
 export const g = makeTestGroup(ValidationTest);
@@ -44,25 +45,25 @@ fn(async (t) => {
 
 g.test('submit_a_destroyed_texture_as_attachment').
 desc(
-`
+  `
 Test that it is invalid to submit with a texture as {color, depth, stencil, depth-stencil} attachment
 that was destroyed {before, after} encoding finishes.
-`).
-
+`
+).
 params((u) =>
 u //
 .combine('depthStencilTextureAspect', kTextureAspects).
 combine('colorTextureState', [
 'valid',
 'destroyedBeforeEncode',
-'destroyedAfterEncode']).
-
+'destroyedAfterEncode']
+).
 combine('depthStencilTextureState', [
 'valid',
 'destroyedBeforeEncode',
-'destroyedAfterEncode'])).
-
-
+'destroyedAfterEncode']
+)
+).
 fn((t) => {
   const { colorTextureState, depthStencilTextureAspect, depthStencilTextureState } = t.params;
 

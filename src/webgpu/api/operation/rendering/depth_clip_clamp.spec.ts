@@ -4,7 +4,7 @@ depth ranges as well.
 `;
 
 import { makeTestGroup } from '../../../../common/framework/test_group.js';
-import { kDepthStencilFormats, kTextureFormatInfo } from '../../../capability_info.js';
+import { kDepthStencilFormats, kTextureFormatInfo } from '../../../format_info.js';
 import { GPUTest } from '../../../gpu_test.js';
 import {
   checkElementsBetween,
@@ -36,7 +36,7 @@ have unexpected values then get drawn to the color buffer, which is later checke
   .params(u =>
     u //
       .combine('format', kDepthStencilFormats)
-      .filter(p => kTextureFormatInfo[p.format].depth)
+      .filter(p => !!kTextureFormatInfo[p.format].depth)
       .combine('unclippedDepth', [undefined, false, true])
       .combine('writeDepth', [false, true])
       .combine('multisampled', [false, true])
@@ -314,7 +314,7 @@ have unexpected values then get drawn to the color buffer, which is later checke
 
     const kCheckPassedValue = 0;
     const predicatePrinter: CheckElementsSupplementalTableRows = [
-      { leftHeader: 'expected ==', getValueForCell: index => kCheckPassedValue },
+      { leftHeader: 'expected ==', getValueForCell: _index => kCheckPassedValue },
     ];
     if (dsActual && dsExpected && format === 'depth32float') {
       await Promise.all([dsActual.mapAsync(GPUMapMode.READ), dsExpected.mapAsync(GPUMapMode.READ)]);
@@ -328,7 +328,7 @@ have unexpected values then get drawn to the color buffer, which is later checke
     t.expectGPUBufferValuesPassCheck(
       checkBuffer,
       a =>
-        checkElementsPassPredicate(a, (index, value) => value === kCheckPassedValue, {
+        checkElementsPassPredicate(a, (_index, value) => value === kCheckPassedValue, {
           predicatePrinter,
         }),
       { type: Uint8Array, typedLength: kNumTestPoints, method: 'map' }
@@ -352,7 +352,7 @@ to be empty.`
   .params(u =>
     u //
       .combine('format', kDepthStencilFormats)
-      .filter(p => kTextureFormatInfo[p.format].depth)
+      .filter(p => !!kTextureFormatInfo[p.format].depth)
       .combine('unclippedDepth', [false, true])
       .combine('multisampled', [false, true])
   )

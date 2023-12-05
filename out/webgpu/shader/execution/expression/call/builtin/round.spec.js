@@ -12,36 +12,33 @@ and k+1 when k is odd.
 Component-wise when T is a vector.
 `;import { makeTestGroup } from '../../../../../../common/framework/test_group.js';
 import { GPUTest } from '../../../../../gpu_test.js';
-import { TypeF32 } from '../../../../../util/conversion.js';
-import { roundInterval } from '../../../../../util/f32_interval.js';
-import { fullF32Range } from '../../../../../util/math.js';
-import { makeCaseCache } from '../../case_cache.js';
-import { allInputSources, generateUnaryToF32IntervalCases, run } from '../../expression.js';
+import { TypeAbstractFloat, TypeF16, TypeF32 } from '../../../../../util/conversion.js';
+import { allInputSources, onlyConstInputSource, run } from '../../expression.js';
 
-import { builtin } from './builtin.js';
+import { abstractBuiltin, builtin } from './builtin.js';
+import { d } from './round.cache.js';
 
 export const g = makeTestGroup(GPUTest);
-
-export const d = makeCaseCache('round', {
-  f32: () => {
-    return generateUnaryToF32IntervalCases(fullF32Range(), 'unfiltered', roundInterval);
-  }
-});
 
 g.test('abstract_float').
 specURL('https://www.w3.org/TR/WGSL/#float-builtin-functions').
 desc(`abstract float tests`).
 params((u) =>
-u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4])).
-
-unimplemented();
+u.
+combine('inputSource', onlyConstInputSource).
+combine('vectorize', [undefined, 2, 3, 4])
+).
+fn(async (t) => {
+  const cases = await d.get('abstract');
+  await run(t, abstractBuiltin('round'), [TypeAbstractFloat], TypeAbstractFloat, t.params, cases);
+});
 
 g.test('f32').
 specURL('https://www.w3.org/TR/WGSL/#float-builtin-functions').
 desc(`f32 tests`).
 params((u) =>
-u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4])).
-
+u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4])
+).
 fn(async (t) => {
   const cases = await d.get('f32');
   await run(t, builtin('round'), [TypeF32], TypeF32, t.params, cases);
@@ -51,7 +48,13 @@ g.test('f16').
 specURL('https://www.w3.org/TR/WGSL/#float-builtin-functions').
 desc(`f16 tests`).
 params((u) =>
-u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4])).
-
-unimplemented();
+u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4])
+).
+beforeAllSubcases((t) => {
+  t.selectDeviceOrSkipTestCase('shader-f16');
+}).
+fn(async (t) => {
+  const cases = await d.get('f16');
+  await run(t, builtin('round'), [TypeF16], TypeF16, t.params, cases);
+});
 //# sourceMappingURL=round.spec.js.map

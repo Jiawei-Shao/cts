@@ -26,7 +26,8 @@ import {
   range,
   unreachable,
 } from '../../../../../common/util/util.js';
-import { kMaxQueryCount, DepthStencilFormat } from '../../../../capability_info.js';
+import { kMaxQueryCount } from '../../../../capability_info.js';
+import { DepthStencilFormat } from '../../../../format_info.js';
 import { GPUTest } from '../../../../gpu_test.js';
 
 const kRequiredQueryBufferOffsetAlignment = 256;
@@ -34,10 +35,10 @@ const kBytesPerQuery = 8;
 const kTextureSize = [4, 4];
 
 const kRenderModes = ['direct', 'render-bundle'] as const;
-type RenderMode = typeof kRenderModes[number];
+type RenderMode = (typeof kRenderModes)[number];
 
 const kBufferOffsets = ['zero', 'non-zero'] as const;
-type BufferOffset = typeof kBufferOffsets[number];
+type BufferOffset = (typeof kBufferOffsets)[number];
 
 type SetupParams = {
   numQueries: number;
@@ -211,7 +212,9 @@ class QueryStarterRenderBundle implements QueryStarter {
   ) {
     this._device = device;
     this._pass = pass;
-    const colorAttachment = (renderPassDescriptor.colorAttachments as GPURenderPassColorAttachment[])[0];
+    const colorAttachment = (
+      renderPassDescriptor.colorAttachments as GPURenderPassColorAttachment[]
+    )[0];
     this._renderBundleEncoderDescriptor = {
       colorFormats: ['rgba8unorm'],
       depthStencilFormat: renderPassDescriptor.depthStencilAttachment?.depthLoadOp
@@ -494,7 +497,8 @@ class OcclusionQueryTest extends GPUTest {
 
     const result = await this.readBufferAsBigUint64(readBuffer);
     for (const queryIndex of queryIndices) {
-      const passed = !!result[queryIndex];
+      const resultNdx = queryIndex - querySetOffset;
+      const passed = !!result[resultNdx];
       checkQueryIndexResultFn(passed, queryIndex);
     }
 
@@ -691,7 +695,7 @@ g.test('occlusion_query,scissor')
         const expectPassed = !occluded;
         t.expect(
           !!passed === expectPassed,
-          `queryIndex: ${queryIndex}, scissorCase: ${scissorCase}, was: ${!!passed}, expected: ${expectPassed}, ${name}`
+          `queryIndex: ${queryIndex}, scissorCase: ${scissorCase}, was: ${!!passed}, expected: ${expectPassed}`
         );
       }
     );
@@ -735,7 +739,7 @@ g.test('occlusion_query,depth')
         const expectPassed = queryIndex % 2 === 0;
         t.expect(
           !!passed === expectPassed,
-          `queryIndex: ${queryIndex}, was: ${!!passed}, expected: ${expectPassed}, ${name}`
+          `queryIndex: ${queryIndex}, was: ${!!passed}, expected: ${expectPassed}`
         );
       }
     );
@@ -779,7 +783,7 @@ g.test('occlusion_query,stencil')
         const expectPassed = queryIndex % 2 === 0;
         t.expect(
           !!passed === expectPassed,
-          `queryIndex: ${queryIndex}, was: ${!!passed}, expected: ${expectPassed}, ${name}`
+          `queryIndex: ${queryIndex}, was: ${!!passed}, expected: ${expectPassed}`
         );
       }
     );
@@ -847,7 +851,7 @@ g.test('occlusion_query,sample_mask')
         const expectPassed = !!(sampleMask & drawMask);
         t.expect(
           !!passed === expectPassed,
-          `queryIndex: ${queryIndex}, was: ${!!passed}, expected: ${expectPassed}, ${name}`
+          `queryIndex: ${queryIndex}, was: ${!!passed}, expected: ${expectPassed}`
         );
       }
     );
@@ -904,19 +908,29 @@ g.test('occlusion_query,alpha_to_coverage')
       createQuad(0.25, 0.25),
     ];
 
-    const numPassedPerGroup = new Array(kNumQueries / 4).fill(0);
+    const numPassedPerGroup: number[] = new Array(kNumQueries / 4).fill(0);
+
+    // These tests can't use queryIndex to decide what to draw because which mask
+    // a particular alpha converts to is implementation defined. When querySetOffset is
+    // non-zero the queryIndex will go 7, 8, 9, 10, ... but we need to guarantee
+    // 4 queries per pixel and group those results so `queryIndex / 4 | 0` won't work.
+    // Instead we count the queries to get 4 draws per group, one to each quadrant of a pixel
+    // Then we total up the passes for those 4 queries by queryCount.
+    let queryCount = 0;
+    let resultCount = 0;
     await t.runQueryTest(
       resources,
       renderPassDescriptor,
       (helper, queryIndex) => {
         const queryHelper = helper.beginOcclusionQuery(queryIndex);
         queryHelper.setPipeline(pipeline);
-        queryHelper.setVertexBuffer(vertexBuffers[queryIndex % 4]);
+        queryHelper.setVertexBuffer(vertexBuffers[queryCount++ % 4]);
         queryHelper.draw(6);
         queryHelper.end();
       },
-      (passed, queryIndex) => {
-        numPassedPerGroup[(queryIndex / 4) | 0] += passed ? 1 : 0;
+      passed => {
+        const groupIndex = (resultCount++ / 4) | 0;
+        numPassedPerGroup[groupIndex] += passed ? 1 : 0;
       }
     );
 

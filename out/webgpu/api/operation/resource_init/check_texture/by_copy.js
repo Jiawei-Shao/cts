@@ -1,6 +1,6 @@
 /**
 * AUTO-GENERATED - DO NOT EDIT. Source: https://github.com/gpuweb/cts
-**/import { assert } from '../../../../../common/util/util.js';import { kTextureFormatInfo } from '../../../../capability_info.js';import { virtualMipSize } from '../../../../util/texture/base.js';
+**/import { assert } from '../../../../../common/util/util.js';import { kTextureFormatInfo } from '../../../../format_info.js';import { virtualMipSize } from '../../../../util/texture/base.js';
 
 
 export const checkContentsByBufferCopy = (
@@ -36,10 +36,10 @@ subresourceRange) =>
     const format = params.format;
 
     const [width, height, depth] = virtualMipSize(
-    params.dimension,
-    [t.textureWidth, t.textureHeight, t.textureDepth],
-    level);
-
+      params.dimension,
+      [t.textureWidth, t.textureHeight, t.textureDepth],
+      level
+    );
 
     const dst = t.device.createTexture({
       dimension: params.dimension,
@@ -51,10 +51,10 @@ subresourceRange) =>
 
     const commandEncoder = t.device.createCommandEncoder();
     commandEncoder.copyTextureToTexture(
-    { texture, mipLevel: level, origin: { x: 0, y: 0, z: layer } },
-    { texture: dst, mipLevel: 0 },
-    { width, height, depthOrArrayLayers: depth });
-
+      { texture, mipLevel: level, origin: { x: 0, y: 0, z: layer } },
+      { texture: dst, mipLevel: 0 },
+      { width, height, depthOrArrayLayers: depth }
+    );
     t.queue.submit([commandEncoder.finish()]);
 
     t.expectSingleColor(dst, format, {

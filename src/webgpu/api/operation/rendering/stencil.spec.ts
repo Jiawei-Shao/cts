@@ -5,10 +5,10 @@ Test related to stencil states, stencil op, compare func, etc.
 import { makeTestGroup } from '../../../../common/framework/test_group.js';
 import { TypedArrayBufferView } from '../../../../common/util/util.js';
 import {
-  DepthStencilFormat,
   kDepthStencilFormats,
   kTextureFormatInfo,
-} from '../../../capability_info.js';
+  DepthStencilFormat,
+} from '../../../format_info.js';
 import { GPUTest, TextureTestMixin } from '../../../gpu_test.js';
 import { TexelView } from '../../../util/texture/texel_view.js';
 
@@ -213,7 +213,7 @@ class StencilTest extends TextureTestMixin(GPUTest) {
       B: expectedColor[2],
       A: expectedColor[3],
     };
-    const expTexelView = TexelView.fromTexelsAsColors(renderTargetFormat, coords => expColor);
+    const expTexelView = TexelView.fromTexelsAsColors(renderTargetFormat, _coords => expColor);
     this.expectTexelViewComparisonIsOkInTexture({ texture: renderTarget }, expTexelView, [1, 1]);
   }
 
@@ -553,9 +553,11 @@ g.test('stencil_reference_initialized')
       passOp: 'keep',
     } as const;
 
+    const hasDepth = !!kTextureFormatInfo[format].depth;
+
     const baseState = {
       format,
-      depthWriteEnabled: true,
+      depthWriteEnabled: hasDepth,
       depthCompare: 'always',
       stencilFront: baseStencilState,
       stencilBack: baseStencilState,
@@ -563,7 +565,7 @@ g.test('stencil_reference_initialized')
 
     const testState = {
       format,
-      depthWriteEnabled: true,
+      depthWriteEnabled: hasDepth,
       depthCompare: 'always',
       stencilFront: testStencilState,
       stencilBack: testStencilState,

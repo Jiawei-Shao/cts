@@ -11,12 +11,12 @@ import {
 } from '../../../../../common/framework/resources.js';
 import { makeTestGroup } from '../../../../../common/framework/test_group.js';
 import { raceWithRejectOnTimeout, unreachable, assert } from '../../../../../common/util/util.js';
+import { kTextureUsages } from '../../../../capability_info.js';
 import {
   kTextureFormatInfo,
   kTextureFormats,
-  kTextureUsages,
   kValidTextureFormatsForCopyE2T,
-} from '../../../../capability_info.js';
+} from '../../../../format_info.js';
 import { kResourceStates } from '../../../../gpu_test.js';
 import {
   CanvasType,
@@ -157,7 +157,14 @@ class CopyExternalImageToTextureTest extends ValidationTest {
   ): HTMLCanvasElement | OffscreenCanvas {
     const canvas = createCanvas(this, canvasType, 1, 1);
     const ctx = canvas.getContext('2d');
-    assert(ctx instanceof CanvasRenderingContext2D);
+    switch (canvasType) {
+      case 'onscreen':
+        assert(ctx instanceof CanvasRenderingContext2D);
+        break;
+      case 'offscreen':
+        assert(ctx instanceof OffscreenCanvasRenderingContext2D);
+        break;
+    }
     ctx.drawImage(content, 0, 0);
 
     return canvas;
@@ -671,6 +678,7 @@ g.test('destination_texture,format')
   )
   .beforeAllSubcases(t => {
     const { format } = t.params;
+    t.skipIfTextureFormatNotSupported(format);
     t.selectDeviceOrSkipTestCase(kTextureFormatInfo[format].feature);
   })
   .fn(async t => {

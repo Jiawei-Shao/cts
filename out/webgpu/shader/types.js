@@ -4,13 +4,15 @@
 
 const kArrayLength = 3;
 
+// never is the same as "must not"
 
 
 
 export const HostSharableTypes = ['i32', 'u32', 'f32'];
 
 /** Info for each plain scalar type. */
-export const kScalarTypeInfo = {
+export const kScalarTypeInfo =
+{
   'i32': { layout: { alignment: 4, size: 4 }, supportsAtomics: true, arrayLength: 1, innerLength: 0 },
   'u32': { layout: { alignment: 4, size: 4 }, supportsAtomics: true, arrayLength: 1, innerLength: 0 },
   'f32': { layout: { alignment: 4, size: 4 }, supportsAtomics: false, arrayLength: 1, innerLength: 0 },
@@ -20,7 +22,8 @@ export const kScalarTypeInfo = {
 export const kScalarTypes = keysOf(kScalarTypeInfo);
 
 /** Info for each vecN<> container type. */
-export const kVectorContainerTypeInfo = {
+export const kVectorContainerTypeInfo =
+{
   'vec2': { layout: { alignment: 8, size: 8 }, arrayLength: 2, innerLength: 0 },
   'vec3': { layout: { alignment: 16, size: 12 }, arrayLength: 3, innerLength: 0 },
   'vec4': { layout: { alignment: 16, size: 16 }, arrayLength: 4, innerLength: 0 }
@@ -29,7 +32,8 @@ export const kVectorContainerTypeInfo = {
 export const kVectorContainerTypes = keysOf(kVectorContainerTypeInfo);
 
 /** Info for each matNxN<> container type. */
-export const kMatrixContainerTypeInfo = {
+export const kMatrixContainerTypeInfo =
+{
   'mat2x2': { layout: { alignment: 8, size: 16 }, arrayLength: 2, innerLength: 2 },
   'mat3x2': { layout: { alignment: 8, size: 24 }, arrayLength: 3, innerLength: 2 },
   'mat4x2': { layout: { alignment: 8, size: 32 }, arrayLength: 4, innerLength: 2 },
@@ -44,6 +48,82 @@ export const kMatrixContainerTypeInfo = {
 export const kMatrixContainerTypes = keysOf(kMatrixContainerTypeInfo);
 
 
+
+
+
+export const kAccessModeInfo = {
+  read: { read: true, write: false },
+  write: { read: false, write: true },
+  read_write: { read: true, write: true }
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+export const kAddressSpaceInfo = {
+  storage: {
+    scope: 'module',
+    binding: true,
+    spell: 'must',
+    accessModes: ['read', 'read_write'],
+    spellAccessMode: 'may'
+  },
+  uniform: {
+    scope: 'module',
+    binding: true,
+    spell: 'must',
+    accessModes: ['read'],
+    spellAccessMode: 'never'
+  },
+  private: {
+    scope: 'module',
+    binding: false,
+    spell: 'must',
+    accessModes: ['read_write'],
+    spellAccessMode: 'never'
+  },
+  workgroup: {
+    scope: 'module',
+    binding: false,
+    spell: 'must',
+    accessModes: ['read_write'],
+    spellAccessMode: 'never'
+  },
+  function: {
+    scope: 'function',
+    binding: false,
+    spell: 'may',
+    accessModes: ['read_write'],
+    spellAccessMode: 'never'
+  },
+  handle: {
+    scope: 'module',
+    binding: true,
+    spell: 'never',
+    accessModes: [],
+    spellAccessMode: 'never'
+  }
+};
 
 /** List of texel formats and their shader representation */
 export const TexelFormats = [
@@ -69,7 +149,7 @@ export const TexelFormats = [
  * Generate a bunch types (vec, mat, sized/unsized array) for testing.
  */
 export function* generateTypes({
-  storageClass,
+  addressSpace,
   baseType,
   containerType,
   isAtomic = false
@@ -89,7 +169,7 @@ export function* generateTypes({
   const scalarType = isAtomic ? `atomic<${baseType}>` : baseType;
 
   // Storage and uniform require host-sharable types.
-  if (storageClass === 'storage' || storageClass === 'uniform') {
+  if (addressSpace === 'storage' || addressSpace === 'uniform') {
     assert(isHostSharable(baseType), 'type ' + baseType.toString() + ' is not host sharable');
   }
 
@@ -139,7 +219,7 @@ export function* generateTypes({
       {
         alignment: scalarInfo.layout.alignment,
         size:
-        storageClass === 'uniform' ?
+        addressSpace === 'uniform' ?
         // Uniform storage class must have array elements aligned to 16.
         kArrayLength *
         arrayStride({
@@ -152,7 +232,7 @@ export function* generateTypes({
     };
 
     // Sized
-    if (storageClass === 'uniform') {
+    if (addressSpace === 'uniform') {
       yield {
         type: `array<vec4<${scalarType}>,${kArrayLength}>`,
         _kTypeInfo: arrayTypeInfo
@@ -161,7 +241,7 @@ export function* generateTypes({
       yield { type: `array<${scalarType},${kArrayLength}>`, _kTypeInfo: arrayTypeInfo };
     }
     // Unsized
-    if (storageClass === 'storage') {
+    if (addressSpace === 'storage') {
       yield { type: `array<${scalarType}>`, _kTypeInfo: arrayTypeInfo };
     }
   }
@@ -186,8 +266,8 @@ export function supportsAtomics(p)
 
 {
   return (
-    (p.storageClass === 'storage' && p.storageMode === 'read_write' ||
-    p.storageClass === 'workgroup') && (
+    (p.addressSpace === 'storage' && p.storageMode === 'read_write' ||
+    p.addressSpace === 'workgroup') && (
     p.containerType === 'scalar' || p.containerType === 'array'));
 
 }
@@ -201,7 +281,7 @@ export function* supportedScalarTypes(p) {
     if (p.isAtomic && !info.supportsAtomics) continue;
 
     // Storage and uniform require host-sharable types.
-    const isHostShared = p.storageClass === 'storage' || p.storageClass === 'uniform';
+    const isHostShared = p.addressSpace === 'storage' || p.addressSpace === 'uniform';
     if (isHostShared && info.layout === undefined) continue;
 
     yield scalarType;

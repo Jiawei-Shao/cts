@@ -3,33 +3,48 @@ import {
   FixtureClass,
   FixtureClassInterface,
   FixtureClassWithMixin,
+  SkipTestCase,
   SubcaseBatchState,
+  TestCaseRecorder,
   TestParams,
 } from '../common/framework/fixture.js';
+import { globalTestConfig } from '../common/framework/test_config.js';
+import { getGPU } from '../common/util/navigator_gpu.js';
 import {
   assert,
+  makeValueTestVariant,
+  memcpy,
   range,
+  ValueTestVariant,
   TypedArrayBufferView,
   TypedArrayBufferViewConstructor,
   unreachable,
 } from '../common/util/util.js';
 
 import {
-  EncodableTextureFormat,
-  SizedTextureFormat,
-  kTextureFormatInfo,
+  getDefaultLimits,
+  kLimits,
   kQueryTypeInfo,
-  resolvePerAspectFormat,
-  kEncodableTextureFormats,
+  WGSLLanguageFeature,
 } from './capability_info.js';
+import {
+  kTextureFormatInfo,
+  kEncodableTextureFormats,
+  resolvePerAspectFormat,
+  SizedTextureFormat,
+  EncodableTextureFormat,
+  isCompressedTextureFormat,
+  ColorTextureFormat,
+} from './format_info.js';
 import { makeBufferWithContents } from './util/buffer.js';
 import { checkElementsEqual, checkElementsBetween } from './util/check_contents.js';
 import { CommandBufferMaker, EncoderType } from './util/command_buffer_maker.js';
 import { ScalarType } from './util/conversion.js';
 import { DevicePool, DeviceProvider, UncanonicalizedDeviceDescriptor } from './util/device_pool.js';
 import { align, roundDown } from './util/math.js';
-import { createTextureFromTexelView, createTextureFromTexelViews } from './util/texture.js';
+import { physicalMipSizeFromTexture, virtualMipSize } from './util/texture/base.js';
 import {
+  bytesInACompleteRow,
   getTextureCopyLayout,
   getTextureSubCopyLayout,
   LayoutOptions as TextureLayoutOptions,
@@ -42,6 +57,7 @@ import {
   TexelCompareOptions,
   textureContentIsOKByT2B,
 } from './util/texture/texture_ok.js';
+import { createTextureFromTexelView, createTextureFromTexelViews } from './util/texture.js';
 import { reifyOrigin3D } from './util/unions.js';
 
 const devicePool = new DevicePool();
@@ -51,7 +67,7 @@ const devicePool = new DevicePool();
 const mismatchedDevicePool = new DevicePool();
 
 const kResourceStateValues = ['valid', 'invalid', 'destroyed'] as const;
-export type ResourceState = typeof kResourceStateValues[number];
+export type ResourceState = (typeof kResourceStateValues)[number];
 export const kResourceStates: readonly ResourceState[] = kResourceStateValues;
 
 /** Various "convenient" shorthands for GPUDeviceDescriptors for selectDevice functions. */
@@ -81,12 +97,12 @@ export class GPUTestSubcaseBatchState extends SubcaseBatchState {
   /** Provider for mismatched device. */
   private mismatchedProvider: Promise<DeviceProvider> | undefined;
 
-  async postInit(): Promise<void> {
+  override async postInit(): Promise<void> {
     // Skip all subcases if there's no device.
     await this.acquireProvider();
   }
 
-  async finalize(): Promise<void> {
+  override async finalize(): Promise<void> {
     await super.finalize();
 
     // Ensure devicePool.release is called for both providers even if one rejects.
@@ -105,6 +121,14 @@ export class GPUTestSubcaseBatchState extends SubcaseBatchState {
     return this.provider;
   }
 
+  get isCompatibility() {
+    return globalTestConfig.compatibility;
+  }
+
+  getDefaultLimits() {
+    return getDefaultLimits(this.isCompatibility ? 'compatibility' : 'core');
+  }
+
   /**
    * Some tests or cases need particular feature flags or limits to be enabled.
    * Call this function with a descriptor or feature name (or `undefined`) to select a
@@ -114,7 +138,10 @@ export class GPUTestSubcaseBatchState extends SubcaseBatchState {
    */
   selectDeviceOrSkipTestCase(descriptor: DeviceSelectionDescriptor): void {
     assert(this.provider === undefined, "Can't selectDeviceOrSkipTestCase() multiple times");
-    this.provider = devicePool.acquire(initUncanonicalizedDeviceDescriptor(descriptor));
+    this.provider = devicePool.acquire(
+      this.recorder,
+      initUncanonicalizedDeviceDescriptor(descriptor)
+    );
     // Suppress uncaught promise rejection (we'll catch it later).
     this.provider.catch(() => {});
   }
@@ -133,6 +160,7 @@ export class GPUTestSubcaseBatchState extends SubcaseBatchState {
     const features = new Set<GPUFeatureName | undefined>();
     for (const format of formats) {
       if (format !== undefined) {
+        this.skipIfTextureFormatNotSupported(format);
         features.add(kTextureFormatInfo[format].feature);
       }
     }
@@ -172,10 +200,56 @@ export class GPUTestSubcaseBatchState extends SubcaseBatchState {
     );
 
     this.mismatchedProvider = mismatchedDevicePool.acquire(
+      this.recorder,
       initUncanonicalizedDeviceDescriptor(descriptor)
     );
     // Suppress uncaught promise rejection (we'll catch it later).
     this.mismatchedProvider.catch(() => {});
+  }
+
+  /** Throws an exception marking the subcase as skipped. */
+  skip(msg: string): never {
+    throw new SkipTestCase(msg);
+  }
+
+  /** Throws an exception making the subcase as skipped if condition is true */
+  skipIf(cond: boolean, msg: string | (() => string) = '') {
+    if (cond) {
+      this.skip(typeof msg === 'function' ? msg() : msg);
+    }
+  }
+
+  /**
+   * Skips test if any format is not supported.
+   */
+  skipIfTextureFormatNotSupported(...formats: (GPUTextureFormat | undefined)[]) {
+    if (this.isCompatibility) {
+      for (const format of formats) {
+        if (format === 'bgra8unorm-srgb') {
+          this.skip(`texture format '${format} is not supported`);
+        }
+      }
+    }
+  }
+
+  skipIfCopyTextureToTextureNotSupportedForFormat(...formats: (GPUTextureFormat | undefined)[]) {
+    if (this.isCompatibility) {
+      for (const format of formats) {
+        if (format && isCompressedTextureFormat(format)) {
+          this.skip(`copyTextureToTexture with ${format} is not supported`);
+        }
+      }
+    }
+  }
+
+  skipIfTextureViewDimensionNotSupported(...dimensions: (GPUTextureViewDimension | undefined)[]) {
+    if (this.isCompatibility) {
+      for (const dimension of dimensions) {
+        if (dimension === 'cube-array') {
+          this.skip(`texture view dimension '${dimension}' is not supported`);
+        }
+      }
+    }
   }
 }
 
@@ -186,19 +260,42 @@ export class GPUTestSubcaseBatchState extends SubcaseBatchState {
  * as well as helpers that use that device.
  */
 export class GPUTestBase extends Fixture<GPUTestSubcaseBatchState> {
-  public static MakeSharedState(params: TestParams): GPUTestSubcaseBatchState {
-    return new GPUTestSubcaseBatchState(params);
+  public static override MakeSharedState(
+    recorder: TestCaseRecorder,
+    params: TestParams
+  ): GPUTestSubcaseBatchState {
+    return new GPUTestSubcaseBatchState(recorder, params);
   }
 
   // This must be overridden in derived classes
   get device(): GPUDevice {
     unreachable();
-    return (null as unknown) as GPUDevice;
+    return null as unknown as GPUDevice;
   }
 
   /** GPUQueue for the test to use. (Same as `t.device.queue`.) */
   get queue(): GPUQueue {
     return this.device.queue;
+  }
+
+  get isCompatibility() {
+    return globalTestConfig.compatibility;
+  }
+
+  getDefaultLimits() {
+    return getDefaultLimits(this.isCompatibility ? 'compatibility' : 'core');
+  }
+
+  getDefaultLimit(limit: (typeof kLimits)[number]) {
+    return this.getDefaultLimits()[limit].default;
+  }
+
+  makeLimitVariant(limit: (typeof kLimits)[number], variant: ValueTestVariant) {
+    return makeValueTestVariant(this.device.limits[limit], variant);
+  }
+
+  canCallCopyTextureToBufferWithTextureFormat(format: GPUTextureFormat) {
+    return !this.isCompatibility || !isCompressedTextureFormat(format);
   }
 
   /** Snapshot a GPUBuffer's contents, returning a new GPUBuffer with the `MAP_READ` usage. */
@@ -294,6 +391,55 @@ export class GPUTestBase extends Fixture<GPUTestSubcaseBatchState> {
         mappable.destroy();
       },
     };
+  }
+
+  /**
+   * Skips test if any format is not supported.
+   */
+  skipIfTextureFormatNotSupported(...formats: (GPUTextureFormat | undefined)[]) {
+    if (this.isCompatibility) {
+      for (const format of formats) {
+        if (format === 'bgra8unorm-srgb') {
+          this.skip(`texture format '${format} is not supported`);
+        }
+      }
+    }
+  }
+
+  skipIfTextureViewDimensionNotSupported(...dimensions: (GPUTextureViewDimension | undefined)[]) {
+    if (this.isCompatibility) {
+      for (const dimension of dimensions) {
+        if (dimension === 'cube-array') {
+          this.skip(`texture view dimension '${dimension}' is not supported`);
+        }
+      }
+    }
+  }
+
+  skipIfCopyTextureToTextureNotSupportedForFormat(...formats: (GPUTextureFormat | undefined)[]) {
+    if (this.isCompatibility) {
+      for (const format of formats) {
+        if (format && isCompressedTextureFormat(format)) {
+          this.skip(`copyTextureToTexture with ${format} is not supported`);
+        }
+      }
+    }
+  }
+
+  /** Skips this test case if the `langFeature` is *not* supported. */
+  requireLanguageFeatureOrSkipTestCase(langFeature: WGSLLanguageFeature) {
+    const lf = getGPU(this.rec).wgslLanguageFeatures;
+    if (lf === undefined || !lf.has(langFeature)) {
+      this.skip(`WGSL language feature '${langFeature}' is not supported`);
+    }
+  }
+
+  /** Skips this test case if the `langFeature` is supported. */
+  skipIfLanguageFeatureSupported(langFeature: WGSLLanguageFeature) {
+    const lf = getGPU(this.rec).wgslLanguageFeatures;
+    if (lf !== undefined && lf.has(langFeature)) {
+      this.skip(`WGSL language feature '${langFeature}' is supported`);
+    }
   }
 
   /**
@@ -950,7 +1096,7 @@ export class GPUTest extends GPUTestBase {
   private provider: DeviceProvider | undefined;
   private mismatchedProvider: DeviceProvider | undefined;
 
-  async init() {
+  override async init() {
     await super.init();
 
     this.provider = await this.sharedState.acquireProvider();
@@ -960,7 +1106,7 @@ export class GPUTest extends GPUTestBase {
   /**
    * GPUDevice for the test to use.
    */
-  get device(): GPUDevice {
+  override get device(): GPUDevice {
     assert(this.provider !== undefined, 'internal error: GPUDevice missing?');
     return this.provider.device;
   }
@@ -1029,13 +1175,188 @@ export interface TextureTestMixinType {
     exp: PerPixelComparison<E>[],
     comparisonOptions?: TexelCompareOptions
   ): void;
+
+  /**
+   * Renders the 2 given textures to an rgba8unorm texture at the size of the
+   * specified mipLevel, each time reading the contents of the result.
+   * Expects contents of both renders to match. Also expects contents described
+   * by origin and size to not be a constant value so as to make sure something
+   * interesting was actually compared.
+   *
+   * The point of this function is to compare compressed texture contents in
+   * compatibility mode. `copyTextureToBuffer` does not work for compressed
+   * textures in compatibility mode so instead, we pass 2 compressed texture
+   * to this function. Each one will be rendered to an `rgba8unorm` texture,
+   * the results of that `rgba8unorm` texture read via `copyTextureToBuffer`,
+   * and then results compared. This indirectly lets us compare the contents
+   * of the 2 compressed textures.
+   *
+   * Code calling this function would generate the textures where the
+   * `actualTexture` is generated calling `writeTexture`, `copyBufferToTexture`
+   * or `copyTextureToTexture` and `expectedTexture`'s data is generated entirely
+   * on the CPU in such a way that its content should match whatever process
+   * was used to generate `actualTexture`. Often this involves calling
+   * `updateLinearTextureDataSubBox`
+   */
+  expectTexturesToMatchByRendering(
+    actualTexture: GPUTexture,
+    expectedTexture: GPUTexture,
+    mipLevel: number,
+    origin: Required<GPUOrigin3DDict>,
+    size: Required<GPUExtent3DDict>
+  ): void;
+
+  /**
+   * Copies an entire texture's mipLevel to a buffer
+   */
+  copyWholeTextureToNewBufferSimple(texture: GPUTexture, mipLevel: number): GPUBuffer;
+
+  /**
+   * Copies an texture's mipLevel to a buffer
+   * The size of the buffer is specified by `byteLength`
+   */
+  copyWholeTextureToNewBuffer(
+    { texture, mipLevel }: { texture: GPUTexture; mipLevel: number | undefined },
+    resultDataLayout: {
+      bytesPerBlock: number;
+      byteLength: number;
+      bytesPerRow: number;
+      rowsPerImage: number;
+      mipSize: [number, number, number];
+    }
+  ): GPUBuffer;
+
+  /**
+   * Updates a Uint8Array with a cubic portion of data from another Uint8Array.
+   * Effectively it's a Uint8Array to Uint8Array copy that
+   * does the same thing as `writeTexture` but because the
+   * destination is a buffer you have to provide the parameters
+   * of the destination buffer similarly to how you'd provide them
+   * to `copyTextureToBuffer`
+   */
+  updateLinearTextureDataSubBox(
+    format: ColorTextureFormat,
+    copySize: Required<GPUExtent3DDict>,
+    copyParams: {
+      dest: LinearCopyParameters;
+      src: LinearCopyParameters;
+    }
+  ): void;
+
+  /**
+   * Gets a byte offset to a texel
+   */
+  getTexelOffsetInBytes(
+    textureDataLayout: Required<GPUImageDataLayout>,
+    format: ColorTextureFormat,
+    texel: Required<GPUOrigin3DDict>,
+    origin?: Required<GPUOrigin3DDict>
+  ): number;
+
+  iterateBlockRows(
+    size: Required<GPUExtent3DDict>,
+    format: ColorTextureFormat
+  ): Generator<Required<GPUOrigin3DDict>>;
 }
+
+type PipelineType = '2d' | '2d-array';
+
+type ImageCopyTestResources = {
+  pipelineByPipelineType: Map<PipelineType, GPURenderPipeline>;
+};
+
+const s_deviceToResourcesMap = new WeakMap<GPUDevice, ImageCopyTestResources>();
+
+/**
+ * Gets a (cached) pipeline to render a texture to an rgba8unorm texture
+ */
+function getPipelineToRenderTextureToRGB8UnormTexture(
+  device: GPUDevice,
+  texture: GPUTexture,
+  isCompatibility: boolean
+) {
+  if (!s_deviceToResourcesMap.has(device)) {
+    s_deviceToResourcesMap.set(device, {
+      pipelineByPipelineType: new Map<PipelineType, GPURenderPipeline>(),
+    });
+  }
+
+  const { pipelineByPipelineType } = s_deviceToResourcesMap.get(device)!;
+  const pipelineType: PipelineType =
+    isCompatibility && texture.depthOrArrayLayers > 1 ? '2d-array' : '2d';
+  if (!pipelineByPipelineType.get(pipelineType)) {
+    const [textureType, layerCode] =
+      pipelineType === '2d' ? ['texture_2d', ''] : ['texture_2d_array', ', uni.baseArrayLayer'];
+    const module = device.createShaderModule({
+      code: `
+        struct VSOutput {
+          @builtin(position) position: vec4f,
+          @location(0) texcoord: vec2f,
+        };
+
+        struct Uniforms {
+          baseArrayLayer: u32,
+        };
+
+        @vertex fn vs(
+          @builtin(vertex_index) vertexIndex : u32
+        ) -> VSOutput {
+            let pos = array(
+               vec2f(-1, -1),
+               vec2f(-1,  3),
+               vec2f( 3, -1),
+            );
+
+            var vsOutput: VSOutput;
+
+            let xy = pos[vertexIndex];
+
+            vsOutput.position = vec4f(xy, 0.0, 1.0);
+            vsOutput.texcoord = xy * vec2f(0.5, -0.5) + vec2f(0.5);
+
+            return vsOutput;
+         }
+
+         @group(0) @binding(0) var ourSampler: sampler;
+         @group(0) @binding(1) var ourTexture: ${textureType}<f32>;
+         @group(0) @binding(2) var<uniform> uni: Uniforms;
+
+         @fragment fn fs(fsInput: VSOutput) -> @location(0) vec4f {
+            return textureSample(ourTexture, ourSampler, fsInput.texcoord${layerCode});
+         }
+      `,
+    });
+    const pipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module,
+        entryPoint: 'vs',
+      },
+      fragment: {
+        module,
+        entryPoint: 'fs',
+        targets: [{ format: 'rgba8unorm' }],
+      },
+    });
+    pipelineByPipelineType.set(pipelineType, pipeline);
+  }
+  const pipeline = pipelineByPipelineType.get(pipelineType)!;
+  return { pipelineType, pipeline };
+}
+
+type LinearCopyParameters = {
+  dataLayout: Required<GPUImageDataLayout>;
+  origin: Required<GPUOrigin3DDict>;
+  data: Uint8Array;
+};
+
 export function TextureTestMixin<F extends FixtureClass<GPUTest>>(
   Base: F
 ): FixtureClassWithMixin<F, TextureTestMixinType> {
   class TextureExpectations
     extends (Base as FixtureClassInterface<GPUTest>)
-    implements TextureTestMixinType {
+    implements TextureTestMixinType
+  {
     createTextureFromTexelView(
       texelView: TexelView,
       desc: Omit<GPUTextureDescriptor, 'format'>
@@ -1153,6 +1474,277 @@ export function TextureTestMixin<F extends FixtureClass<GPUTest>>(
         )
       );
     }
+
+    expectTexturesToMatchByRendering(
+      actualTexture: GPUTexture,
+      expectedTexture: GPUTexture,
+      mipLevel: number,
+      origin: Required<GPUOrigin3DDict>,
+      size: Required<GPUExtent3DDict>
+    ): void {
+      // Render every layer of both textures at mipLevel to an rgba8unorm texture
+      // that matches the size of the mipLevel. After each render, copy the
+      // result to a buffer and expect the results from both textures to match.
+      const { pipelineType, pipeline } = getPipelineToRenderTextureToRGB8UnormTexture(
+        this.device,
+        actualTexture,
+        this.isCompatibility
+      );
+      const readbackPromisesPerTexturePerLayer = [actualTexture, expectedTexture].map(
+        (texture, ndx) => {
+          const attachmentSize = virtualMipSize('2d', [texture.width, texture.height, 1], mipLevel);
+          const attachment = this.device.createTexture({
+            label: `readback${ndx}`,
+            size: attachmentSize,
+            format: 'rgba8unorm',
+            usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT,
+          });
+          this.trackForCleanup(attachment);
+
+          const sampler = this.device.createSampler();
+
+          const numLayers = texture.depthOrArrayLayers;
+          const readbackPromisesPerLayer = [];
+
+          const uniformBuffer = this.device.createBuffer({
+            size: 4,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+          });
+          this.trackForCleanup(uniformBuffer);
+
+          for (let layer = 0; layer < numLayers; ++layer) {
+            const viewDescriptor: GPUTextureViewDescriptor = {
+              baseMipLevel: mipLevel,
+              mipLevelCount: 1,
+              ...(!this.isCompatibility && {
+                baseArrayLayer: layer,
+                arrayLayerCount: 1,
+              }),
+              dimension: pipelineType,
+            };
+
+            const bindGroup = this.device.createBindGroup({
+              layout: pipeline.getBindGroupLayout(0),
+              entries: [
+                { binding: 0, resource: sampler },
+                {
+                  binding: 1,
+                  resource: texture.createView(viewDescriptor),
+                },
+                ...(pipelineType === '2d-array'
+                  ? [
+                      {
+                        binding: 2,
+                        resource: { buffer: uniformBuffer },
+                      },
+                    ]
+                  : []),
+              ],
+            });
+
+            this.device.queue.writeBuffer(uniformBuffer, 0, new Uint32Array([layer]));
+
+            const encoder = this.device.createCommandEncoder();
+            const pass = encoder.beginRenderPass({
+              colorAttachments: [
+                {
+                  view: attachment.createView(),
+                  clearValue: [0.5, 0.5, 0.5, 0.5],
+                  loadOp: 'clear',
+                  storeOp: 'store',
+                },
+              ],
+            });
+            pass.setPipeline(pipeline);
+            pass.setBindGroup(0, bindGroup);
+            pass.draw(3);
+            pass.end();
+            this.queue.submit([encoder.finish()]);
+
+            const buffer = this.copyWholeTextureToNewBufferSimple(attachment, 0);
+
+            readbackPromisesPerLayer.push(
+              this.readGPUBufferRangeTyped(buffer, {
+                type: Uint8Array,
+                typedLength: buffer.size,
+              })
+            );
+          }
+          return readbackPromisesPerLayer;
+        }
+      );
+
+      this.eventualAsyncExpectation(async niceStack => {
+        const readbacksPerTexturePerLayer = [];
+
+        // Wait for all buffers to be ready
+        for (const readbackPromises of readbackPromisesPerTexturePerLayer) {
+          readbacksPerTexturePerLayer.push(await Promise.all(readbackPromises));
+        }
+
+        function arrayNotAllTheSameValue(arr: TypedArrayBufferView | number[], msg?: string) {
+          const first = arr[0];
+          return arr.length <= 1 || arr.findIndex(v => v !== first) >= 0
+            ? undefined
+            : Error(`array is entirely ${first} so likely nothing was tested: ${msg || ''}`);
+        }
+
+        // Compare each layer of each texture as read from buffer.
+        const [actualReadbacksPerLayer, expectedReadbacksPerLayer] = readbacksPerTexturePerLayer;
+        for (let layer = 0; layer < actualReadbacksPerLayer.length; ++layer) {
+          const actualReadback = actualReadbacksPerLayer[layer];
+          const expectedReadback = expectedReadbacksPerLayer[layer];
+          const sameOk =
+            size.width === 0 ||
+            size.height === 0 ||
+            layer < origin.z ||
+            layer >= origin.z + size.depthOrArrayLayers;
+          this.expectOK(
+            sameOk ? undefined : arrayNotAllTheSameValue(actualReadback.data, 'actualTexture')
+          );
+          this.expectOK(
+            sameOk ? undefined : arrayNotAllTheSameValue(expectedReadback.data, 'expectedTexture')
+          );
+          this.expectOK(checkElementsEqual(actualReadback.data, expectedReadback.data), {
+            mode: 'fail',
+            niceStack,
+          });
+          actualReadback.cleanup();
+          expectedReadback.cleanup();
+        }
+      });
+    }
+
+    copyWholeTextureToNewBufferSimple(texture: GPUTexture, mipLevel: number) {
+      const { blockWidth, blockHeight, bytesPerBlock } = kTextureFormatInfo[texture.format];
+      const mipSize = physicalMipSizeFromTexture(texture, mipLevel);
+      assert(bytesPerBlock !== undefined);
+
+      const blocksPerRow = mipSize[0] / blockWidth;
+      const blocksPerColumn = mipSize[1] / blockHeight;
+
+      assert(blocksPerRow % 1 === 0);
+      assert(blocksPerColumn % 1 === 0);
+
+      const bytesPerRow = align(blocksPerRow * bytesPerBlock, 256);
+      const byteLength = bytesPerRow * blocksPerColumn * mipSize[2];
+
+      return this.copyWholeTextureToNewBuffer(
+        { texture, mipLevel },
+        {
+          bytesPerBlock,
+          bytesPerRow,
+          rowsPerImage: blocksPerColumn,
+          byteLength,
+        }
+      );
+    }
+
+    copyWholeTextureToNewBuffer(
+      { texture, mipLevel }: { texture: GPUTexture; mipLevel: number | undefined },
+      resultDataLayout: {
+        bytesPerBlock: number;
+        byteLength: number;
+        bytesPerRow: number;
+        rowsPerImage: number;
+      }
+    ): GPUBuffer {
+      const { byteLength, bytesPerRow, rowsPerImage } = resultDataLayout;
+      const buffer = this.device.createBuffer({
+        size: align(byteLength, 4), // this is necessary because we need to copy and map data from this buffer
+        usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+      });
+      this.trackForCleanup(buffer);
+
+      const mipSize = physicalMipSizeFromTexture(texture, mipLevel || 0);
+      const encoder = this.device.createCommandEncoder();
+      encoder.copyTextureToBuffer(
+        { texture, mipLevel },
+        { buffer, bytesPerRow, rowsPerImage },
+        mipSize
+      );
+      this.device.queue.submit([encoder.finish()]);
+
+      return buffer;
+    }
+
+    updateLinearTextureDataSubBox(
+      format: ColorTextureFormat,
+      copySize: Required<GPUExtent3DDict>,
+      copyParams: {
+        dest: LinearCopyParameters;
+        src: LinearCopyParameters;
+      }
+    ): void {
+      const { src, dest } = copyParams;
+      const rowLength = bytesInACompleteRow(copySize.width, format);
+      for (const texel of this.iterateBlockRows(copySize, format)) {
+        const srcOffsetElements = this.getTexelOffsetInBytes(
+          src.dataLayout,
+          format,
+          texel,
+          src.origin
+        );
+        const dstOffsetElements = this.getTexelOffsetInBytes(
+          dest.dataLayout,
+          format,
+          texel,
+          dest.origin
+        );
+        memcpy(
+          { src: src.data, start: srcOffsetElements, length: rowLength },
+          { dst: dest.data, start: dstOffsetElements }
+        );
+      }
+    }
+
+    /** Offset for a particular texel in the linear texture data */
+    getTexelOffsetInBytes(
+      textureDataLayout: Required<GPUImageDataLayout>,
+      format: ColorTextureFormat,
+      texel: Required<GPUOrigin3DDict>,
+      origin: Required<GPUOrigin3DDict> = { x: 0, y: 0, z: 0 }
+    ): number {
+      const { offset, bytesPerRow, rowsPerImage } = textureDataLayout;
+      const info = kTextureFormatInfo[format];
+
+      assert(texel.x % info.blockWidth === 0);
+      assert(texel.y % info.blockHeight === 0);
+      assert(origin.x % info.blockWidth === 0);
+      assert(origin.y % info.blockHeight === 0);
+
+      const bytesPerImage = rowsPerImage * bytesPerRow;
+
+      return (
+        offset +
+        (texel.z + origin.z) * bytesPerImage +
+        ((texel.y + origin.y) / info.blockHeight) * bytesPerRow +
+        ((texel.x + origin.x) / info.blockWidth) * info.color.bytes
+      );
+    }
+
+    *iterateBlockRows(
+      size: Required<GPUExtent3DDict>,
+      format: ColorTextureFormat
+    ): Generator<Required<GPUOrigin3DDict>> {
+      if (size.width === 0 || size.height === 0 || size.depthOrArrayLayers === 0) {
+        // do not iterate anything for an empty region
+        return;
+      }
+      const info = kTextureFormatInfo[format];
+      assert(size.height % info.blockHeight === 0);
+      // Note: it's important that the order is in increasing memory address order.
+      for (let z = 0; z < size.depthOrArrayLayers; ++z) {
+        for (let y = 0; y < size.height; y += info.blockHeight) {
+          yield {
+            x: 0,
+            y,
+            z,
+          };
+        }
+      }
+    }
   }
-  return (TextureExpectations as unknown) as FixtureClassWithMixin<F, TextureTestMixinType>;
+
+  return TextureExpectations as unknown as FixtureClassWithMixin<F, TextureTestMixinType>;
 }

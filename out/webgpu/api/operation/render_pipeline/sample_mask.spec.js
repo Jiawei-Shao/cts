@@ -2,7 +2,11 @@
 * AUTO-GENERATED - DO NOT EDIT. Source: https://github.com/gpuweb/cts
 **/export const description = `
 Tests that the final sample mask is the logical AND of all the relevant masks, including
-the rasterization mask, sample mask, fragment output mask, and alpha to coverage mask (when alphaToCoverageEnabled === true)
+the rasterization mask, sample mask, fragment output mask, and alpha to coverage mask (when alphaToCoverageEnabled === true).
+
+Also tested:
+- The positions of samples in the standard sample patterns.
+- Per-sample interpolation sampling: @interpolate(perspective, sample).
 
 TODO: add a test without a 0th color attachment (sparse color attachment), with different color attachments and alpha value output.
 The cross-platform behavior is unknown. could be any of:
@@ -10,7 +14,6 @@ The cross-platform behavior is unknown. could be any of:
 - coverage is always 0%
 - it uses the first non-null attachment
 - it's an error
-
 Details could be found at: https://github.com/gpuweb/cts/issues/2201
 `;import { makeTestGroup } from '../../../../common/framework/test_group.js';
 import { assert, range } from '../../../../common/util/util.js';
@@ -92,11 +95,11 @@ fragmentShaderOutputMaskOrAlphaToCoverageMask)
   const expectedData = new Float32Array(sampleCount);
   for (let i = 0; i < sampleCount; i++) {
     const s = hasSample(
-    rasterizationMask,
-    sampleMask,
-    fragmentShaderOutputMaskOrAlphaToCoverageMask,
-    i);
-
+      rasterizationMask,
+      sampleMask,
+      fragmentShaderOutputMaskOrAlphaToCoverageMask,
+      i
+    );
     expectedData[i] = s ? kDepthWriteValue : kDepthClearValue;
   }
   return expectedData;
@@ -111,118 +114,152 @@ fragmentShaderOutputMaskOrAlphaToCoverageMask)
   const expectedData = new Uint32Array(sampleCount);
   for (let i = 0; i < sampleCount; i++) {
     const s = hasSample(
-    rasterizationMask,
-    sampleMask,
-    fragmentShaderOutputMaskOrAlphaToCoverageMask,
-    i);
-
+      rasterizationMask,
+      sampleMask,
+      fragmentShaderOutputMaskOrAlphaToCoverageMask,
+      i
+    );
     expectedData[i] = s ? kStencilReferenceValue : kStencilClearValue;
   }
   return expectedData;
 }
 
-const kSampleMaskTestVertexShader = `
-struct VertexOutput {
+const kSampleMaskTestShader = `
+struct Varyings {
   @builtin(position) Position : vec4<f32>,
-  @location(0) @interpolate(perspective, sample) fragUV : vec2<f32>,
+  @location(0) @interpolate(flat) uvFlat : vec2<f32>,
+  @location(1) @interpolate(perspective, sample) uvInterpolated : vec2<f32>,
 }
 
+//
+// Vertex shader
+//
+
 @vertex
-fn main(@builtin(vertex_index) VertexIndex : u32) -> VertexOutput {
-  var pos = array<vec2<f32>, 30>(
-      // center quad
-      // only covers pixel center which is sample point when sampleCount === 1
-      // small enough to avoid covering any multi sample points
-      vec2<f32>( 0.2,  0.2),
-      vec2<f32>( 0.2, -0.2),
-      vec2<f32>(-0.2, -0.2),
-      vec2<f32>( 0.2,  0.2),
-      vec2<f32>(-0.2, -0.2),
-      vec2<f32>(-0.2,  0.2),
-
-      // Sub quads are representing rasterization mask and
-      // are slightly scaled to avoid covering the pixel center
-
-      // top-left quad
-      vec2<f32>( -0.01, 1.0),
-      vec2<f32>( -0.01, 0.01),
-      vec2<f32>(-1.0, 0.01),
-      vec2<f32>( -0.01, 1.0),
-      vec2<f32>(-1.0, 0.01),
-      vec2<f32>(-1.0, 1.0),
-
-      // top-right quad
-      vec2<f32>(1.0, 1.0),
-      vec2<f32>(1.0, 0.01),
-      vec2<f32>(0.01, 0.01),
-      vec2<f32>(1.0, 1.0),
-      vec2<f32>(0.01, 0.01),
-      vec2<f32>(0.01, 1.0),
-
-      // bottom-left quad
-      vec2<f32>( -0.01,  -0.01),
-      vec2<f32>( -0.01, -1.0),
-      vec2<f32>(-1.0, -1.0),
-      vec2<f32>( -0.01,  -0.01),
-      vec2<f32>(-1.0, -1.0),
-      vec2<f32>(-1.0,  -0.01),
-
-      // bottom-right quad
-      vec2<f32>(1.0,  -0.01),
-      vec2<f32>(1.0, -1.0),
-      vec2<f32>(0.01, -1.0),
-      vec2<f32>(1.0,  -0.01),
-      vec2<f32>(0.01, -1.0),
-      vec2<f32>(0.01,  -0.01)
+fn vmain(@builtin(vertex_index) VertexIndex : u32,
+    @builtin(instance_index) InstanceIndex : u32) -> Varyings {
+  // Standard sample locations within a pixel, where the pixel ranges from (-1,-1) to (1,1), and is
+  // centered at (0,0) (NDC - the test uses a 1x1 render target).
+  // https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ne-d3d11-d3d11_standard_multisample_quality_levels
+  var sampleCenters = array(
+      // sampleCount = 1
+      vec2f(0, 0),
+      // sampleCount = 4
+      vec2f(-2,  6) / 8,
+      vec2f( 6,  2) / 8,
+      vec2f(-6, -2) / 8,
+      vec2f( 2, -6) / 8,
+    );
+  // A tiny quad to draw around the sample center to ensure we hit only the expected point.
+  let kTinyQuadRadius = 1.0 / 32;
+  var tinyQuad = array(
+    vec2f( kTinyQuadRadius,  kTinyQuadRadius),
+    vec2f( kTinyQuadRadius, -kTinyQuadRadius),
+    vec2f(-kTinyQuadRadius, -kTinyQuadRadius),
+    vec2f( kTinyQuadRadius,  kTinyQuadRadius),
+    vec2f(-kTinyQuadRadius, -kTinyQuadRadius),
+    vec2f(-kTinyQuadRadius,  kTinyQuadRadius),
     );
 
-  var uv = array<vec2<f32>, 30>(
+  var uvsFlat = array(
+      // sampleCount = 1
+      // Note: avoids hitting the point between the 4 texels.
+      vec2f(0.51, 0.51),
+      // sampleCount = 4
+      vec2f(0.25, 0.25),
+      vec2f(0.75, 0.25),
+      vec2f(0.25, 0.75),
+      vec2f(0.75, 0.75),
+    );
+  var uvsInterpolated = array(
       // center quad
-      vec2<f32>(1.0, 0.0),
-      vec2<f32>(1.0, 1.0),
-      vec2<f32>(0.0, 1.0),
-      vec2<f32>(1.0, 0.0),
-      vec2<f32>(0.0, 1.0),
-      vec2<f32>(0.0, 0.0),
+      // Note: the interpolated point will be exactly in the middle of the 4 texels.
+      // The test expects to get texel 1,1 (the 3rd texel) in this case.
+      vec2f(1.0, 0.0),
+      vec2f(1.0, 1.0),
+      vec2f(0.0, 1.0),
+      vec2f(1.0, 0.0),
+      vec2f(0.0, 1.0),
+      vec2f(0.0, 0.0),
 
       // top-left quad (texel 0)
-      vec2<f32>(0.5, 0.0),
-      vec2<f32>(0.5, 0.5),
-      vec2<f32>(0.0, 0.5),
-      vec2<f32>(0.5, 0.0),
-      vec2<f32>(0.0, 0.5),
-      vec2<f32>(0.0, 0.0),
+      vec2f(0.5, 0.0),
+      vec2f(0.5, 0.5),
+      vec2f(0.0, 0.5),
+      vec2f(0.5, 0.0),
+      vec2f(0.0, 0.5),
+      vec2f(0.0, 0.0),
 
       // top-right quad (texel 1)
-      vec2<f32>(1.0, 0.0),
-      vec2<f32>(1.0, 0.5),
-      vec2<f32>(0.5, 0.5),
-      vec2<f32>(1.0, 0.0),
-      vec2<f32>(0.5, 0.5),
-      vec2<f32>(0.5, 0.0),
+      vec2f(1.0, 0.0),
+      vec2f(1.0, 0.5),
+      vec2f(0.5, 0.5),
+      vec2f(1.0, 0.0),
+      vec2f(0.5, 0.5),
+      vec2f(0.5, 0.0),
 
       // bottom-left quad (texel 2)
-      vec2<f32>(0.5, 0.5),
-      vec2<f32>(0.5, 1.0),
-      vec2<f32>(0.0, 1.0),
-      vec2<f32>(0.5, 0.5),
-      vec2<f32>(0.0, 1.0),
-      vec2<f32>(0.0, 0.5),
+      vec2f(0.5, 0.5),
+      vec2f(0.5, 1.0),
+      vec2f(0.0, 1.0),
+      vec2f(0.5, 0.5),
+      vec2f(0.0, 1.0),
+      vec2f(0.0, 0.5),
 
       // bottom-right quad (texel 3)
-      vec2<f32>(1.0, 0.5),
-      vec2<f32>(1.0, 1.0),
-      vec2<f32>(0.5, 1.0),
-      vec2<f32>(1.0, 0.5),
-      vec2<f32>(0.5, 1.0),
-      vec2<f32>(0.5, 0.5)
+      vec2f(1.0, 0.5),
+      vec2f(1.0, 1.0),
+      vec2f(0.5, 1.0),
+      vec2f(1.0, 0.5),
+      vec2f(0.5, 1.0),
+      vec2f(0.5, 0.5)
     );
 
-  var output : VertexOutput;
-  output.Position = vec4<f32>(pos[VertexIndex], ${kDepthWriteValue}, 1.0);
-  output.fragUV = uv[VertexIndex];
+  var output : Varyings;
+  let pos = sampleCenters[InstanceIndex] + tinyQuad[VertexIndex];
+  output.Position = vec4(pos, ${kDepthWriteValue}, 1.0);
+  output.uvFlat = uvsFlat[InstanceIndex];
+  output.uvInterpolated = uvsInterpolated[InstanceIndex * 6 + VertexIndex];
   return output;
-}`;
+}
+
+//
+// Fragment shaders
+//
+
+@group(0) @binding(0) var mySampler: sampler;
+@group(0) @binding(1) var myTexture: texture_2d<f32>;
+
+// For test named 'fragment_output_mask'
+
+@group(0) @binding(2) var<uniform> fragMask: u32;
+struct FragmentOutput1 {
+  @builtin(sample_mask) mask : u32,
+  @location(0) color : vec4<f32>,
+}
+@fragment fn fmain__fragment_output_mask__flat(varyings: Varyings) -> FragmentOutput1 {
+  return FragmentOutput1(fragMask, textureSample(myTexture, mySampler, varyings.uvFlat));
+}
+@fragment fn fmain__fragment_output_mask__interp(varyings: Varyings) -> FragmentOutput1 {
+  return FragmentOutput1(fragMask, textureSample(myTexture, mySampler, varyings.uvInterpolated));
+}
+
+// For test named 'alpha_to_coverage_mask'
+
+struct FragmentOutput2 {
+  @location(0) color0 : vec4<f32>,
+  @location(1) color1 : vec4<f32>,
+}
+@group(0) @binding(2) var<uniform> alpha: vec2<f32>;
+@fragment fn fmain__alpha_to_coverage_mask__flat(varyings: Varyings) -> FragmentOutput2 {
+  var c = textureSample(myTexture, mySampler, varyings.uvFlat);
+  return FragmentOutput2(vec4(c.xyz, alpha[0]), vec4(c.xyz, alpha[1]));
+}
+@fragment fn fmain__alpha_to_coverage_mask__interp(varyings: Varyings) -> FragmentOutput2 {
+  var c = textureSample(myTexture, mySampler, varyings.uvInterpolated);
+  return FragmentOutput2(vec4(c.xyz, alpha[0]), vec4(c.xyz, alpha[1]));
+}
+`;
 
 class F extends TextureTestMixin(GPUTest) {
 
@@ -230,6 +267,9 @@ class F extends TextureTestMixin(GPUTest) {
 
   async init() {
     await super.init();
+    if (this.isCompatibility) {
+      this.skip('WGSL sample_mask is not supported in compatibility mode');
+    }
     // Create a 2x2 color texture to sample from
     // texel 0 - Red
     // texel 1 - Green
@@ -237,18 +277,18 @@ class F extends TextureTestMixin(GPUTest) {
     // texel 3 - Yellow
     const kSampleTextureSize = 2;
     this.sampleTexture = this.createTextureFromTexelView(
-    TexelView.fromTexelsAsBytes(format, (coord) => {
-      const id = coord.x + coord.y * kSampleTextureSize;
-      return kColors[id];
-    }),
-    {
-      size: [kSampleTextureSize, kSampleTextureSize, 1],
-      usage:
-      GPUTextureUsage.TEXTURE_BINDING |
-      GPUTextureUsage.COPY_DST |
-      GPUTextureUsage.RENDER_ATTACHMENT
-    });
-
+      TexelView.fromTexelsAsBytes(format, (coord) => {
+        const id = coord.x + coord.y * kSampleTextureSize;
+        return kColors[id];
+      }),
+      {
+        size: [kSampleTextureSize, kSampleTextureSize, 1],
+        usage:
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.COPY_DST |
+        GPUTextureUsage.RENDER_ATTACHMENT
+      }
+    );
 
     this.sampler = this.device.createSampler({
       magFilter: 'nearest',
@@ -358,25 +398,25 @@ class F extends TextureTestMixin(GPUTest) {
     if (sampleCount === 1) {
       if ((rasterizationMask & 1) !== 0) {
         // draw center quad
-        passEncoder.draw(6);
+        passEncoder.draw(6, 1, 0, 0);
       }
     } else {
       assert(sampleCount === 4);
       if ((rasterizationMask & 1) !== 0) {
         // draw top-left quad
-        passEncoder.draw(6, 1, 6);
+        passEncoder.draw(6, 1, 0, 1);
       }
       if ((rasterizationMask & 2) !== 0) {
         // draw top-right quad
-        passEncoder.draw(6, 1, 12);
+        passEncoder.draw(6, 1, 0, 2);
       }
       if ((rasterizationMask & 4) !== 0) {
         // draw bottom-left quad
-        passEncoder.draw(6, 1, 18);
+        passEncoder.draw(6, 1, 0, 3);
       }
       if ((rasterizationMask & 8) !== 0) {
         // draw bottom-right quad
-        passEncoder.draw(6, 1, 24);
+        passEncoder.draw(6, 1, 0, 4);
       }
     }
     passEncoder.end();
@@ -396,18 +436,18 @@ class F extends TextureTestMixin(GPUTest) {
   fragmentShaderOutputMask)
   {
     const buffer = this.copySinglePixelTextureToBufferUsingComputePass(
-    TypeF32, // correspond to 'rgba8unorm' format
-    4,
-    texture.createView(),
-    sampleCount);
-
+      TypeF32, // correspond to 'rgba8unorm' format
+      4,
+      texture.createView(),
+      sampleCount
+    );
 
     const expected = getExpectedColorData(
-    sampleCount,
-    rasterizationMask,
-    sampleMask,
-    fragmentShaderOutputMask);
-
+      sampleCount,
+      rasterizationMask,
+      sampleMask,
+      fragmentShaderOutputMask
+    );
     this.expectGPUBufferValuesEqual(buffer, expected);
   }
 
@@ -420,23 +460,23 @@ class F extends TextureTestMixin(GPUTest) {
   fragmentShaderOutputMask)
   {
     const buffer = this.copySinglePixelTextureToBufferUsingComputePass(
-    // Use f32 as the scalar type for depth (depth24plus, depth32float)
-    // Use u32 as the scalar type for stencil (stencil8)
-    aspect === 'depth-only' ? TypeF32 : TypeU32,
-    1,
-    depthStencilTexture.createView({ aspect }),
-    sampleCount);
-
+      // Use f32 as the scalar type for depth (depth24plus, depth32float)
+      // Use u32 as the scalar type for stencil (stencil8)
+      aspect === 'depth-only' ? TypeF32 : TypeU32,
+      1,
+      depthStencilTexture.createView({ aspect }),
+      sampleCount
+    );
 
     const expected =
     aspect === 'depth-only' ?
     getExpectedDepthData(sampleCount, rasterizationMask, sampleMask, fragmentShaderOutputMask) :
     getExpectedStencilData(
-    sampleCount,
-    rasterizationMask,
-    sampleMask,
-    fragmentShaderOutputMask);
-
+      sampleCount,
+      rasterizationMask,
+      sampleMask,
+      fragmentShaderOutputMask
+    );
     this.expectGPUBufferValuesEqual(buffer, expected);
   }
 }
@@ -445,7 +485,7 @@ export const g = makeTestGroup(F);
 
 g.test('fragment_output_mask').
 desc(
-`
+  `
 Tests that the final sample mask is the logical AND of all the relevant masks -- meaning that the samples
 not included in the final mask are discarded on any attachments including
 - color outputs
@@ -466,40 +506,26 @@ textureLoad each sample index from the texture and write to a storage buffer to 
     - sample mask = { 0, 0b0001, 0b0010, 0b0111, 0b1011, 0b1101, 0b1110, 0b1111, 0b11110 }
     - fragment shader output @builtin(sample_mask) = { 0, 0b0001, 0b0010, 0b0111, 0b1011, 0b1101, 0b1110, 0b1111, 0b11110 }
 - [choosing 0b11110 because the 5th bit should be ignored]
-`).
-
+`
+).
 params((u) =>
 u.
+combine('interpolated', [false, true]).
 combine('sampleCount', [1, 4]).
 expand('rasterizationMask', function* (p) {
-  for (let i = 0, len = 2 ** p.sampleCount - 1; i <= len; i++) {
+  const maxMask = 2 ** p.sampleCount - 1;
+  for (let i = 0; i <= maxMask; i++) {
     yield i;
   }
 }).
 beginSubcases().
 combine('sampleMask', [
-0,
-0b0001,
-0b0010,
-0b0111,
-0b1011,
-0b1101,
-0b1110,
-0b1111,
-0b11110]).
-
+0, 0b0001, 0b0010, 0b0111, 0b1011, 0b1101, 0b1110, 0b1111, 0b11110]
+).
 combine('fragmentShaderOutputMask', [
-0,
-0b0001,
-0b0010,
-0b0111,
-0b1011,
-0b1101,
-0b1110,
-0b1111,
-0b11110])).
-
-
+0, 0b0001, 0b0010, 0b0111, 0b1011, 0b1101, 0b1110, 0b1111, 0b11110]
+)
+).
 fn((t) => {
   const { sampleCount, rasterizationMask, sampleMask, fragmentShaderOutputMask } = t.params;
 
@@ -509,37 +535,18 @@ fn((t) => {
   });
   t.trackForCleanup(fragmentMaskUniformBuffer);
   t.device.queue.writeBuffer(
-  fragmentMaskUniformBuffer,
-  0,
-  new Uint32Array([fragmentShaderOutputMask]));
+    fragmentMaskUniformBuffer,
+    0,
+    new Uint32Array([fragmentShaderOutputMask])
+  );
 
-
+  const module = t.device.createShaderModule({ code: kSampleMaskTestShader });
   const pipeline = t.device.createRenderPipeline({
     layout: 'auto',
-    vertex: {
-      module: t.device.createShaderModule({
-        code: kSampleMaskTestVertexShader
-      }),
-      entryPoint: 'main'
-    },
+    vertex: { module, entryPoint: 'vmain' },
     fragment: {
-      module: t.device.createShaderModule({
-        code: `
-          @group(0) @binding(0) var mySampler: sampler;
-          @group(0) @binding(1) var myTexture: texture_2d<f32>;
-          @group(0) @binding(2) var<uniform> fragMask: u32;
-
-          struct FragmentOutput {
-            @builtin(sample_mask) mask : u32,
-            @location(0) color : vec4<f32>,
-          }
-
-          @fragment
-          fn main(@location(0) @interpolate(perspective, sample) fragUV: vec2<f32>) -> FragmentOutput {
-            return FragmentOutput(fragMask, textureSample(myTexture, mySampler, fragUV));
-          }`
-      }),
-      entryPoint: 'main',
+      module,
+      entryPoint: `fmain__fragment_output_mask__${t.params.interpolated ? 'interp' : 'flat'}`,
       targets: [{ format }]
     },
     primitive: { topology: 'triangle-list' },
@@ -565,42 +572,42 @@ fn((t) => {
   });
 
   const { color, depthStencil } = t.GetTargetTexture(
-  sampleCount,
-  rasterizationMask,
-  pipeline,
-  fragmentMaskUniformBuffer);
-
+    sampleCount,
+    rasterizationMask,
+    pipeline,
+    fragmentMaskUniformBuffer
+  );
 
   t.CheckColorAttachmentResult(
-  color,
-  sampleCount,
-  rasterizationMask,
-  sampleMask,
-  fragmentShaderOutputMask);
-
-
-  t.CheckDepthStencilResult(
-  'depth-only',
-  depthStencil,
-  sampleCount,
-  rasterizationMask,
-  sampleMask,
-  fragmentShaderOutputMask);
-
+    color,
+    sampleCount,
+    rasterizationMask,
+    sampleMask,
+    fragmentShaderOutputMask
+  );
 
   t.CheckDepthStencilResult(
-  'stencil-only',
-  depthStencil,
-  sampleCount,
-  rasterizationMask,
-  sampleMask,
-  fragmentShaderOutputMask);
+    'depth-only',
+    depthStencil,
+    sampleCount,
+    rasterizationMask,
+    sampleMask,
+    fragmentShaderOutputMask
+  );
 
+  t.CheckDepthStencilResult(
+    'stencil-only',
+    depthStencil,
+    sampleCount,
+    rasterizationMask,
+    sampleMask,
+    fragmentShaderOutputMask
+  );
 });
 
 g.test('alpha_to_coverage_mask').
 desc(
-`
+  `
 Test that alpha_to_coverage_mask is working properly with the alpha output of color target[0].
 
 - for sampleCount = 4, alphaToCoverageEnabled = true and various combinations of:
@@ -618,22 +625,24 @@ Test that alpha_to_coverage_mask is working properly with the alpha output of co
 The algorithm of producing the alpha-to-coverage mask is platform-dependent. The test draws a different color
 at each sample point. for any two alpha values (alpha and alpha') where 0 < alpha' < alpha < 1, the color values (color and color') must satisfy
 color' <= color.
-`).
-
+`
+).
 params((u) =>
 u.
+combine('interpolated', [false, true]).
+combine('sampleCount', [4]).
 expand('rasterizationMask', function* (p) {
-  for (let i = 0, len = 0xf; i <= len; i++) {
+  const maxMask = 2 ** p.sampleCount - 1;
+  for (let i = 0; i <= maxMask; i++) {
     yield i;
   }
 }).
 beginSubcases().
-combine('alpha1', [0.0, 0.5, 1.0])).
-
+combine('alpha1', [0.0, 0.5, 1.0])
+).
 fn(async (t) => {
-  const sampleCount = 4;
+  const { sampleCount, rasterizationMask, alpha1 } = t.params;
   const sampleMask = 0xffffffff;
-  const { rasterizationMask, alpha1 } = t.params;
 
   const alphaValues = new Float32Array(4); // [alpha0, alpha1, 0, 0]
   const alphaValueUniformBuffer = t.device.createBuffer({
@@ -642,38 +651,13 @@ fn(async (t) => {
   });
   t.trackForCleanup(alphaValueUniformBuffer);
 
+  const module = t.device.createShaderModule({ code: kSampleMaskTestShader });
   const pipeline = t.device.createRenderPipeline({
     layout: 'auto',
-    vertex: {
-      module: t.device.createShaderModule({
-        code: kSampleMaskTestVertexShader
-      }),
-      entryPoint: 'main'
-    },
+    vertex: { module, entryPoint: 'vmain' },
     fragment: {
-      module: t.device.createShaderModule({
-        code: `
-          @group(0) @binding(0) var mySampler: sampler;
-          @group(0) @binding(1) var myTexture: texture_2d<f32>;
-          @group(0) @binding(2) var<uniform> alpha: vec4<f32>;
-
-          struct FragmentOutput {
-            @location(0) color0 : vec4<f32>,
-            @location(1) color1 : vec4<f32>,
-          }
-
-          @fragment
-          fn main(@location(0) @interpolate(perspective, sample) fragUV: vec2<f32>) -> FragmentOutput {
-            var c = textureSample(myTexture, mySampler, fragUV);
-            var output: FragmentOutput;
-            output.color0 = c;
-            output.color0.a = alpha[0];
-            output.color1 = c;
-            output.color1.a = alpha[1];
-            return output;
-          }`
-      }),
-      entryPoint: 'main',
+      module,
+      entryPoint: `fmain__alpha_to_coverage_mask__${t.params.interpolated ? 'interp' : 'flat'}`,
       targets: [{ format }, { format }]
     },
     primitive: { topology: 'triangle-list' },
@@ -711,19 +695,19 @@ fn(async (t) => {
     t.device.queue.writeBuffer(alphaValueUniformBuffer, 0, alphaValues);
 
     const { color, depthStencil } = t.GetTargetTexture(
-    sampleCount,
-    rasterizationMask,
-    pipeline,
-    alphaValueUniformBuffer,
-    2);
-
+      sampleCount,
+      rasterizationMask,
+      pipeline,
+      alphaValueUniformBuffer,
+      2
+    );
 
     const colorBuffer = t.copySinglePixelTextureToBufferUsingComputePass(
-    TypeF32, // correspond to 'rgba8unorm' format
-    4,
-    color.createView(),
-    sampleCount);
-
+      TypeF32, // correspond to 'rgba8unorm' format
+      4,
+      color.createView(),
+      sampleCount
+    );
     const colorResult = t.readGPUBufferRangeTyped(colorBuffer, {
       type: Float32Array,
       typedLength: colorBuffer.size / Float32Array.BYTES_PER_ELEMENT
@@ -731,11 +715,11 @@ fn(async (t) => {
     colorResultPromises.push(colorResult);
 
     const depthBuffer = t.copySinglePixelTextureToBufferUsingComputePass(
-    TypeF32, // correspond to 'depth24plus-stencil8' format
-    1,
-    depthStencil.createView({ aspect: 'depth-only' }),
-    sampleCount);
-
+      TypeF32, // correspond to 'depth24plus-stencil8' format
+      1,
+      depthStencil.createView({ aspect: 'depth-only' }),
+      sampleCount
+    );
     const depthResult = t.readGPUBufferRangeTyped(depthBuffer, {
       type: Float32Array,
       typedLength: depthBuffer.size / Float32Array.BYTES_PER_ELEMENT
@@ -743,11 +727,11 @@ fn(async (t) => {
     depthResultPromises.push(depthResult);
 
     const stencilBuffer = t.copySinglePixelTextureToBufferUsingComputePass(
-    TypeU32, // correspond to 'depth24plus-stencil8' format
-    1,
-    depthStencil.createView({ aspect: 'stencil-only' }),
-    sampleCount);
-
+      TypeU32, // correspond to 'depth24plus-stencil8' format
+      1,
+      depthStencil.createView({ aspect: 'stencil-only' }),
+      sampleCount
+    );
     const stencilResult = t.readGPUBufferRangeTyped(stencilBuffer, {
       type: Uint32Array,
       typedLength: stencilBuffer.size / Uint32Array.BYTES_PER_ELEMENT
@@ -758,8 +742,8 @@ fn(async (t) => {
   const resultsArray = await Promise.all([
   Promise.all(colorResultPromises),
   Promise.all(depthResultPromises),
-  Promise.all(stencilResultPromises)]);
-
+  Promise.all(stencilResultPromises)]
+  );
 
   const checkResults = (
   results,
@@ -784,24 +768,24 @@ fn(async (t) => {
         t.expectOK(check);
       } else if (alpha0 >= 1) {
         const expected = getExpectedDataFn(
-        sampleCount,
-        rasterizationMask,
-        sampleMask,
-        0xffffffff);
-
+          sampleCount,
+          rasterizationMask,
+          sampleMask,
+          0xffffffff
+        );
         const check = checkElementsEqual(result.data, expected);
         t.expectOK(check);
       } else {
         assert(i > 0);
         const prevResult = results[i - 1];
         const check = checkElementsPassPredicate(
-        result.data,
-        (index, value) =>
-        positiveCorrelation ?
-        value >= prevResult.data[index] :
-        value <= prevResult.data[index],
-        {});
-
+          result.data,
+          (index, value) =>
+          positiveCorrelation ?
+          value >= prevResult.data[index] :
+          value <= prevResult.data[index],
+          {}
+        );
         t.expectOK(check);
       }
     }

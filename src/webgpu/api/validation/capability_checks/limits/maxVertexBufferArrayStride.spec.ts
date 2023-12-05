@@ -50,7 +50,7 @@ function getDeviceLimitToRequest(
     case 'betweenDefaultAndMaximum':
       return Math.min(
         defaultLimit,
-        roundDown(((defaultLimit + maximumLimit) / 2) | 0, kMinAttributeStride)
+        roundDown(Math.floor((defaultLimit + maximumLimit) / 2), kMinAttributeStride)
       );
     case 'atMaximum':
       return maximumLimit;
@@ -110,4 +110,12 @@ g.test('createRenderPipeline,at_over')
         await t.testCreateRenderPipeline(pipelineDescriptor, async, shouldError);
       }
     );
+  });
+
+g.test('validate')
+  .desc(`Test that ${limit} is a multiple of 4 bytes`)
+  .fn(t => {
+    const { defaultLimit, adapterLimit } = t;
+    t.expect(defaultLimit % 4 === 0);
+    t.expect(adapterLimit % 4 === 0);
   });

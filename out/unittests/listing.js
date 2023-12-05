@@ -27,7 +27,12 @@ export const listing = [
   },
   {
     "file": [
-      "f32_interval"
+      "crc32"
+    ]
+  },
+  {
+    "file": [
+      "floating_point"
     ]
   },
   {
@@ -62,7 +67,17 @@ export const listing = [
   },
   {
     "file": [
+      "parse_imports"
+    ]
+  },
+  {
+    "file": [
       "preprocessor"
+    ]
+  },
+  {
+    "file": [
+      "prng"
     ]
   },
   {
@@ -88,6 +103,11 @@ export const listing = [
   {
     "file": [
       "test_query"
+    ]
+  },
+  {
+    "file": [
+      "texture_ok"
     ]
   }
 ];

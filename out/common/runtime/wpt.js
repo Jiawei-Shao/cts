@@ -32,7 +32,7 @@ setup({
 
 void (async () => {
   const workerEnabled = optionEnabled('worker');
-  const worker = workerEnabled ? new TestWorker(false) : undefined;
+  const worker = workerEnabled ? new TestWorker() : undefined;
 
   globalTestConfig.unrollConstEvalLoops = optionEnabled('unroll_const_eval_loops');
 
@@ -48,10 +48,10 @@ void (async () => {
   const expectations =
   typeof loadWebGPUExpectations !== 'undefined' ?
   parseExpectationsForTestQuery(
-  await loadWebGPUExpectations,
-  filterQuery,
-  new URL(window.location.href)) :
-
+    await loadWebGPUExpectations,
+    filterQuery,
+    new URL(window.location.href)
+  ) :
   [];
 
   const log = new Logger();

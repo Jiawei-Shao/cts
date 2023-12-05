@@ -9,56 +9,36 @@ T is S or vecN<S>
 Returns the arc tangent of e1 over e2. Component-wise when T is a vector.
 `;import { makeTestGroup } from '../../../../../../common/framework/test_group.js';
 import { GPUTest } from '../../../../../gpu_test.js';
-import { kValue } from '../../../../../util/constants.js';
-import { TypeF32 } from '../../../../../util/conversion.js';
-import { atan2Interval } from '../../../../../util/f32_interval.js';
-import { linearRange, sparseF32Range } from '../../../../../util/math.js';
-import { makeCaseCache } from '../../case_cache.js';
-import { allInputSources, generateBinaryToF32IntervalCases, run } from '../../expression.js';
+import { TypeF16, TypeF32 } from '../../../../../util/conversion.js';
+import { allInputSources, run } from '../../expression.js';
 
+import { d } from './atan2.cache.js';
 import { builtin } from './builtin.js';
 
 export const g = makeTestGroup(GPUTest);
-
-export const d = makeCaseCache('atan2', {
-  f32: () => {
-    // Using sparse, since there a N^2 cases being generated, but including extra values around 0, since that is where
-    // there is a discontinuity that implementations tend to behave badly at.
-    const numeric_range = [
-    ...sparseF32Range(),
-    ...linearRange(kValue.f32.negative.max, kValue.f32.positive.min, 10)];
-
-    return generateBinaryToF32IntervalCases(
-    numeric_range,
-    numeric_range,
-    'unfiltered',
-    atan2Interval);
-
-  }
-});
 
 g.test('abstract_float').
 specURL('https://www.w3.org/TR/WGSL/#float-builtin-functions').
 desc(`abstract float tests`).
 params((u) =>
-u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4])).
-
+u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4])
+).
 unimplemented();
 
 g.test('f32').
 specURL('https://www.w3.org/TR/WGSL/#float-builtin-functions').
 desc(
-`
+  `
 f32 tests
 
 TODO(#792): Decide what the ground-truth is for these tests. [1]
-`).
-
+`
+).
 params((u) =>
-u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4])).
-
+u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4])
+).
 fn(async (t) => {
-  const cases = await d.get('f32');
+  const cases = await d.get(`f32_${t.params.inputSource === 'const' ? 'const' : 'non_const'}`);
   await run(t, builtin('atan2'), [TypeF32, TypeF32], TypeF32, t.params, cases);
 });
 
@@ -66,7 +46,13 @@ g.test('f16').
 specURL('https://www.w3.org/TR/WGSL/#float-builtin-functions').
 desc(`f16 tests`).
 params((u) =>
-u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4])).
-
-unimplemented();
+u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4])
+).
+beforeAllSubcases((t) => {
+  t.selectDeviceOrSkipTestCase('shader-f16');
+}).
+fn(async (t) => {
+  const cases = await d.get(`f16_${t.params.inputSource === 'const' ? 'const' : 'non_const'}`);
+  await run(t, builtin('atan2'), [TypeF16, TypeF16], TypeF16, t.params, cases);
+});
 //# sourceMappingURL=atan2.spec.js.map

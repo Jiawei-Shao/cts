@@ -18,19 +18,11 @@ export { TestCaseRecorder } from '../internal/logging/test_case_recorder.js';
 
 
 export class SubcaseBatchState {
-
-
-  constructor(params) {
-    this._params = params;
-  }
-
-  /**
-   * Returns the case parameters for this test fixture shared state. Subcase params
-   * are not included.
-   */
-  get params() {
-    return this._params;
-  }
+  constructor(
+  recorder,
+  /** The case parameters for this test fixture shared state. Subcase params are not included. */
+  params)
+  {this.recorder = recorder;this.params = params;}
 
   /**
    * Runs before the `.before()` function.
@@ -67,8 +59,8 @@ export class Fixture {
   numOutstandingAsyncExpectations = 0;
   objectsToCleanUp = [];
 
-  static MakeSharedState(params) {
-    return new SubcaseBatchState(params);
+  static MakeSharedState(recorder, params) {
+    return new SubcaseBatchState(recorder, params);
   }
 
   /** @internal */
@@ -111,9 +103,9 @@ export class Fixture {
    */
   async finalize() {
     assert(
-    this.numOutstandingAsyncExpectations === 0,
-    'there were outstanding immediateAsyncExpectations (e.g. expectUncapturedError) at the end of the test');
-
+      this.numOutstandingAsyncExpectations === 0,
+      'there were outstanding immediateAsyncExpectations (e.g. expectUncapturedError) at the end of the test'
+    );
 
     // Loop to exhaust the eventualExpectations in case they chain off each other.
     while (this.eventualExpectations.length) {
@@ -172,6 +164,13 @@ export class Fixture {
   /** Throws an exception marking the subcase as skipped. */
   skip(msg) {
     throw new SkipTestCase(msg);
+  }
+
+  /** Throws an exception marking the subcase as skipped if condition is true */
+  skipIf(cond, msg = '') {
+    if (cond) {
+      this.skip(typeof msg === 'function' ? msg() : msg);
+    }
   }
 
   /** Log a warning and increase the result status to "Warn". */
@@ -238,26 +237,42 @@ export class Fixture {
   }
 
   /** Expect that the provided promise rejects, with the provided exception name. */
-  shouldReject(expectedName, p, msg) {
+  shouldReject(
+  expectedName,
+  p,
+  { allowMissingStack = false, message } = {})
+  {
     this.eventualAsyncExpectation(async (niceStack) => {
-      const m = msg ? ': ' + msg : '';
+      const m = message ? ': ' + message : '';
       try {
         await p;
         niceStack.message = 'DID NOT REJECT' + m;
         this.rec.expectationFailed(niceStack);
       } catch (ex) {
-        niceStack.message = 'rejected as expected' + m;
         this.expectErrorValue(expectedName, ex, niceStack);
+        if (!allowMissingStack) {
+          if (!(ex instanceof Error && typeof ex.stack === 'string')) {
+            const exMessage = ex instanceof Error ? ex.message : '?';
+            niceStack.message = `rejected as expected, but missing stack (${exMessage})${m}`;
+            this.rec.expectationFailed(niceStack);
+          }
+        }
       }
     });
   }
 
   /**
-   * Expect that the provided function throws.
-   * If an `expectedName` is provided, expect that the throw exception has that name.
+   * Expect that the provided function throws (if `true` or `string`) or not (if `false`).
+   * If a string is provided, expect that the throw exception has that name.
+   *
+   * MAINTENANCE_TODO: Change to `string | false` so the exception name is always checked.
    */
-  shouldThrow(expectedError, fn, msg) {
-    const m = msg ? ': ' + msg : '';
+  shouldThrow(
+  expectedError,
+  fn,
+  { allowMissingStack = false, message } = {})
+  {
+    const m = message ? ': ' + message : '';
     try {
       fn();
       if (expectedError === false) {
@@ -270,6 +285,11 @@ export class Fixture {
         this.rec.expectationFailed(new Error('threw unexpectedly' + m));
       } else {
         this.expectErrorValue(expectedError, ex, new Error(m));
+        if (!allowMissingStack) {
+          if (!(ex instanceof Error && typeof ex.stack === 'string')) {
+            this.rec.expectationFailed(new Error('threw as expected, but missing stack' + m));
+          }
+        }
       }
     }
   }
@@ -326,4 +346,14 @@ export class Fixture {
     });
   }
 }
+
+
+
+/**
+ * FixtureClass encapsulates a constructor for fixture and a corresponding
+ * shared state factory function. An interface version of the type is also
+ * defined for mixin declaration use ONLY. The interface version is necessary
+ * because mixin classes need a constructor with a single any[] rest
+ * parameter.
+ */
 //# sourceMappingURL=fixture.js.map

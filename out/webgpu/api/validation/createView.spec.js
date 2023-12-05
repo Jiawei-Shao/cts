@@ -4,20 +4,22 @@
 import { makeTestGroup } from '../../../common/framework/test_group.js';
 import { unreachable } from '../../../common/util/util.js';
 import {
-kTextureAspects,
-kTextureDimensions,
-kTextureFormatInfo,
-kTextureFormats,
-kTextureViewDimensions,
-kFeaturesForFormats,
-viewCompatible,
-filterFormatsByFeature } from
+  kTextureAspects,
+  kTextureDimensions,
+  kTextureViewDimensions } from
 '../../capability_info.js';
+import {
+  kTextureFormatInfo,
+  kTextureFormats,
+  kFeaturesForFormats,
+  filterFormatsByFeature,
+  viewCompatible } from
+'../../format_info.js';
 import { kResourceStates } from '../../gpu_test.js';
 import {
-getTextureDimensionFromView,
-reifyTextureViewDescriptor,
-viewDimensionsForTextureDimension } from
+  getTextureDimensionFromView,
+  reifyTextureViewDescriptor,
+  viewDimensionsForTextureDimension } from
 '../../util/texture/base.js';
 import { reifyExtent3D } from '../../util/unions.js';
 
@@ -29,21 +31,21 @@ const kLevels = 6;
 
 g.test('format').
 desc(
-`Views must have the view format compatible with the base texture, for all {texture format}x{view format}.`).
-
+  `Views must have the view format compatible with the base texture, for all {texture format}x{view format}.`
+).
 params((u) =>
 u.
 combine('textureFormatFeature', kFeaturesForFormats).
 combine('viewFormatFeature', kFeaturesForFormats).
 beginSubcases().
 expand('textureFormat', ({ textureFormatFeature }) =>
-filterFormatsByFeature(textureFormatFeature, kTextureFormats)).
-
+filterFormatsByFeature(textureFormatFeature, kTextureFormats)
+).
 expand('viewFormat', ({ viewFormatFeature }) =>
-filterFormatsByFeature(viewFormatFeature, [undefined, ...kTextureFormats])).
-
-combine('useViewFormatList', [false, true])).
-
+filterFormatsByFeature(viewFormatFeature, [undefined, ...kTextureFormats])
+).
+combine('useViewFormatList', [false, true])
+).
 beforeAllSubcases((t) => {
   const { textureFormatFeature, viewFormatFeature } = t.params;
   t.selectDeviceOrSkipTestCase([textureFormatFeature, viewFormatFeature]);
@@ -51,6 +53,10 @@ beforeAllSubcases((t) => {
 fn((t) => {
   const { textureFormat, viewFormat, useViewFormatList } = t.params;
   const { blockWidth, blockHeight } = kTextureFormatInfo[textureFormat];
+
+  t.skipIfTextureFormatNotSupported(textureFormat, viewFormat);
+  // Compatibility mode does not support format reinterpretation.
+  t.skipIf(t.isCompatibility && viewFormat !== undefined && viewFormat !== textureFormat);
 
   const compatible = viewFormat === undefined || viewCompatible(textureFormat, viewFormat);
 
@@ -76,16 +82,19 @@ fn((t) => {
 
 g.test('dimension').
 desc(
-`For all {texture dimension}, {view dimension}, test that they must be compatible:
+  `For all {texture dimension}, {view dimension}, test that they must be compatible:
   - 1d -> 1d
   - 2d -> 2d, 2d-array, cube, or cube-array
-  - 3d -> 3d`).
-
+  - 3d -> 3d`
+).
 params((u) =>
 u.
 combine('textureDimension', kTextureDimensions).
-combine('viewDimension', [...kTextureViewDimensions, undefined])).
-
+combine('viewDimension', [...kTextureViewDimensions, undefined])
+).
+beforeAllSubcases((t) => {
+  t.skipIfTextureViewDimensionNotSupported(t.params.viewDimension);
+}).
 fn((t) => {
   const { textureDimension, viewDimension } = t.params;
 
@@ -109,16 +118,16 @@ fn((t) => {
 
 g.test('aspect').
 desc(
-`For every {format}x{aspect}, test that the view aspect must exist in the format:
+  `For every {format}x{aspect}, test that the view aspect must exist in the format:
   - "all" is allowed for any format
   - "depth-only" is allowed only for depth and depth-stencil formats
-  - "stencil-only" is allowed only for stencil and depth-stencil formats`).
-
+  - "stencil-only" is allowed only for stencil and depth-stencil formats`
+).
 params((u) =>
 u //
 .combine('format', kTextureFormats).
-combine('aspect', kTextureAspects)).
-
+combine('aspect', kTextureAspects)
+).
 beforeAllSubcases((t) => {
   const { format } = t.params;
   t.selectDeviceForTextureFormatOrSkipTestCase(format);
@@ -146,8 +155,8 @@ const kTextureAndViewDimensions = kUnitCaseParamsBuilder.
 combine('textureDimension', kTextureDimensions).
 expand('viewDimension', (p) => [
 undefined,
-...viewDimensionsForTextureDimension(p.textureDimension)]);
-
+...viewDimensionsForTextureDimension(p.textureDimension)]
+);
 
 function validateCreateViewLayersLevels(tex, view) {
   const textureLevels = tex.mipLevelCount ?? 1;
@@ -173,7 +182,7 @@ function validateCreateViewLayersLevels(tex, view) {
 
 g.test('array_layers').
 desc(
-`For each texture dimension {1d,2d,3d}, for each possible view dimension for that texture
+  `For each texture dimension {1d,2d,3d}, for each possible view dimension for that texture
     dimension (or undefined, which defaults to the texture dimension), test validation of layer
     counts:
   - 1d, 2d, and 3d must have exactly 1 layer
@@ -181,25 +190,25 @@ desc(
   - cube must have 6 layers
   - cube-array must have a positive multiple of 6 layers
   - Defaulting of baseArrayLayer and arrayLayerCount
-  - baseArrayLayer+arrayLayerCount must be within the texture`).
-
-params((u) =>
-kTextureAndViewDimensions.
-beginSubcases().
-expand('textureLayers', ({ textureDimension: d }) => d === '2d' ? [1, 6, 18] : [1]).
-combine('textureLevels', [1, kLevels]).
-unless((p) => p.textureDimension === '1d' && p.textureLevels !== 1).
-expand(
-'baseArrayLayer',
-({ textureLayers: l }) => new Set([undefined, 0, 1, 5, 6, 7, l - 1, l, l + 1])).
-
-expand('arrayLayerCount', function* ({ textureLayers: l, baseArrayLayer = 0 }) {
-  yield undefined;
-  for (const lastArrayLayer of new Set([0, 1, 5, 6, 7, l - 1, l, l + 1])) {
-    if (baseArrayLayer <= lastArrayLayer) yield lastArrayLayer - baseArrayLayer;
-  }
-})).
-
+  - baseArrayLayer+arrayLayerCount must be within the texture`
+).
+params(
+  kTextureAndViewDimensions.
+  beginSubcases().
+  expand('textureLayers', ({ textureDimension: d }) => d === '2d' ? [1, 6, 18] : [1]).
+  combine('textureLevels', [1, kLevels]).
+  unless((p) => p.textureDimension === '1d' && p.textureLevels !== 1).
+  expand(
+    'baseArrayLayer',
+    ({ textureLayers: l }) => new Set([undefined, 0, 1, 5, 6, 7, l - 1, l, l + 1])
+  ).
+  expand('arrayLayerCount', function* ({ textureLayers: l, baseArrayLayer = 0 }) {
+    yield undefined;
+    for (const lastArrayLayer of new Set([0, 1, 5, 6, 7, l - 1, l, l + 1])) {
+      if (baseArrayLayer <= lastArrayLayer) yield lastArrayLayer - baseArrayLayer;
+    }
+  })
+).
 fn((t) => {
   const {
     textureDimension,
@@ -209,6 +218,8 @@ fn((t) => {
     baseArrayLayer,
     arrayLayerCount
   } = t.params;
+
+  t.skipIfTextureViewDimensionNotSupported(viewDimension);
 
   const kWidth = 1 << kLevels - 1; // 32
   const textureDescriptor = {
@@ -237,37 +248,34 @@ fn((t) => {
 
 g.test('mip_levels').
 desc(
-`Views must have at least one level, and must be within the level of the base texture.
+  `Views must have at least one level, and must be within the level of the base texture.
 
   - mipLevelCount=0 at various baseMipLevel values
   - Cases where baseMipLevel+mipLevelCount goes past the end of the texture
   - Cases with baseMipLevel or mipLevelCount undefined (compares against reference defaulting impl)
-  `).
-
-params((u) =>
-kTextureAndViewDimensions.
-beginSubcases().
-combine('textureLevels', [1, kLevels - 2, kLevels]).
-unless((p) => p.textureDimension === '1d' && p.textureLevels !== 1).
-expand(
-'baseMipLevel',
-({ textureLevels: l }) => new Set([undefined, 0, 1, 5, 6, 7, l - 1, l, l + 1])).
-
-expand('mipLevelCount', function* ({ textureLevels: l, baseMipLevel = 0 }) {
-  yield undefined;
-  for (const lastMipLevel of new Set([0, 1, 5, 6, 7, l - 1, l, l + 1])) {
-    if (baseMipLevel <= lastMipLevel) yield lastMipLevel - baseMipLevel;
-  }
-})).
-
+  `
+).
+params(
+  kTextureAndViewDimensions.
+  beginSubcases().
+  combine('textureLevels', [1, kLevels - 2, kLevels]).
+  unless((p) => p.textureDimension === '1d' && p.textureLevels !== 1).
+  expand(
+    'baseMipLevel',
+    ({ textureLevels: l }) => new Set([undefined, 0, 1, 5, 6, 7, l - 1, l, l + 1])
+  ).
+  expand('mipLevelCount', function* ({ textureLevels: l, baseMipLevel = 0 }) {
+    yield undefined;
+    for (const lastMipLevel of new Set([0, 1, 5, 6, 7, l - 1, l, l + 1])) {
+      if (baseMipLevel <= lastMipLevel) yield lastMipLevel - baseMipLevel;
+    }
+  })
+).
 fn((t) => {
-  const {
-    textureDimension,
-    viewDimension,
-    textureLevels,
-    baseMipLevel,
-    mipLevelCount
-  } = t.params;
+  const { textureDimension, viewDimension, textureLevels, baseMipLevel, mipLevelCount } =
+  t.params;
+
+  t.skipIfTextureViewDimensionNotSupported(viewDimension);
 
   const textureDescriptor = {
     format: 'rgba8unorm',
@@ -290,9 +298,9 @@ fn((t) => {
 
 g.test('cube_faces_square').
 desc(
-`Test that the X/Y dimensions of cube and cube array textures must be square.
-  - {2d (control case), cube, cube-array}`).
-
+  `Test that the X/Y dimensions of cube and cube array textures must be square.
+  - {2d (control case), cube, cube-array}`
+).
 params((u) =>
 u //
 .combine('dimension', ['2d', 'cube', 'cube-array']).
@@ -301,11 +309,13 @@ combine('size', [
 [5, 5, 6],
 [4, 5, 6],
 [4, 8, 6],
-[8, 4, 6]])).
-
-
+[8, 4, 6]]
+)
+).
 fn((t) => {
   const { dimension, size } = t.params;
+
+  t.skipIfTextureViewDimensionNotSupported(dimension);
 
   const texture = t.device.createTexture({
     format: 'rgba8unorm',

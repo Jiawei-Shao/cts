@@ -12,34 +12,33 @@ TODO:
 
 
 import {
-kUnitCaseParamsBuilder } from
+  kUnitCaseParamsBuilder } from
 
 '../../../../common/framework/params_builder.js';
 import { makeTestGroup } from '../../../../common/framework/test_group.js';
 import { assert, unreachable } from '../../../../common/util/util.js';
-import {
-kTextureFormatInfo,
-kTextureAspects,
-kUncompressedTextureFormats,
-
-
-textureDimensionAndFormatCompatible,
-kTextureDimensions } from
-'../../../capability_info.js';
+import { kTextureAspects, kTextureDimensions } from '../../../capability_info.js';
 import { GPUConst } from '../../../constants.js';
+import {
+  kTextureFormatInfo,
+  kUncompressedTextureFormats,
+  textureDimensionAndFormatCompatible } from
+
+
+'../../../format_info.js';
 import { GPUTest } from '../../../gpu_test.js';
 import { virtualMipSize } from '../../../util/texture/base.js';
 import { createTextureUploadBuffer } from '../../../util/texture/layout.js';
 import { SubresourceRange } from '../../../util/texture/subresource.js';
 import { kTexelRepresentationInfo } from '../../../util/texture/texel_data.js';
 
-export let UninitializeMethod;
+export let UninitializeMethod = /*#__PURE__*/function (UninitializeMethod) {UninitializeMethod["Creation"] = "Creation";UninitializeMethod["StoreOpClear"] = "StoreOpClear";return UninitializeMethod;}({});
 
 // The texture was rendered to with GPUStoreOp "clear"
-(function (UninitializeMethod) {UninitializeMethod["Creation"] = "Creation";UninitializeMethod["StoreOpClear"] = "StoreOpClear";})(UninitializeMethod || (UninitializeMethod = {}));
+
 const kUninitializeMethods = Object.keys(UninitializeMethod);
 
-export let ReadMethod;
+export let ReadMethod = /*#__PURE__*/function (ReadMethod) {ReadMethod["Sample"] = "Sample";ReadMethod["CopyToBuffer"] = "CopyToBuffer";ReadMethod["CopyToTexture"] = "CopyToTexture";ReadMethod["DepthTest"] = "DepthTest";ReadMethod["StencilTest"] = "StencilTest";ReadMethod["ColorBlending"] = "ColorBlending";ReadMethod["Storage"] = "Storage";return ReadMethod;}({});
 
 
 
@@ -50,7 +49,7 @@ export let ReadMethod;
 
 
 // Test with these mip level counts
-(function (ReadMethod) {ReadMethod["Sample"] = "Sample";ReadMethod["CopyToBuffer"] = "CopyToBuffer";ReadMethod["CopyToTexture"] = "CopyToTexture";ReadMethod["DepthTest"] = "DepthTest";ReadMethod["StencilTest"] = "StencilTest";ReadMethod["ColorBlending"] = "ColorBlending";ReadMethod["Storage"] = "Storage";})(ReadMethod || (ReadMethod = {}));
+
 const kMipLevelCounts = [1, 5];
 
 // For each mip level count, define the mip ranges to leave uninitialized.
@@ -81,10 +80,10 @@ const kUninitializedLayerRangesToTest = {
 // the data for each value may have a different representation. These enums are converted to a
 // representation such that their values can be compared. ex.) An integer is needed to upload to an
 // unsigned normalized format, but its value is read as a float in the shader.
-export let InitializedState;
+export let InitializedState = /*#__PURE__*/function (InitializedState) {InitializedState[InitializedState["Canary"] = 0] = "Canary";InitializedState[InitializedState["Zero"] = 1] = "Zero";return InitializedState;}({});
 
 // We check that uninitialized subresources are in this state when read back.
-(function (InitializedState) {InitializedState[InitializedState["Canary"] = 0] = "Canary";InitializedState[InitializedState["Zero"] = 1] = "Zero";})(InitializedState || (InitializedState = {}));
+
 
 const initializedStateAsFloat = {
   [InitializedState.Zero]: 0,
@@ -141,8 +140,8 @@ readMethod)
       usage |= GPUConst.TextureUsage.RENDER_ATTACHMENT;
       break;
     default:
-      unreachable();}
-
+      unreachable();
+  }
 
   switch (readMethod) {
     case ReadMethod.CopyToBuffer:
@@ -161,8 +160,8 @@ readMethod)
       usage |= GPUConst.TextureUsage.RENDER_ATTACHMENT;
       break;
     default:
-      unreachable();}
-
+      unreachable();
+  }
 
   if (sampleCount > 1) {
     // Copies to multisampled textures are not allowed. We need OutputAttachment to initialize
@@ -301,9 +300,9 @@ export class TextureZeroInitTest extends GPUTest {
     commandEncoder.pushDebugGroup('initializeWithStoreOp');
 
     for (const viewDescriptor of this.generateTextureViewDescriptorsForRendering(
-    'all',
-    subresourceRange))
-    {
+      'all',
+      subresourceRange
+    )) {
       if (kTextureFormatInfo[this.p.format].color) {
         commandEncoder.
         beginRenderPass({
@@ -356,39 +355,39 @@ export class TextureZeroInitTest extends GPUTest {
     assert(typeof firstSubresource !== 'undefined');
 
     const [largestWidth, largestHeight, largestDepth] = virtualMipSize(
-    this.p.dimension,
-    [this.textureWidth, this.textureHeight, this.textureDepth],
-    firstSubresource.level);
-
+      this.p.dimension,
+      [this.textureWidth, this.textureHeight, this.textureDepth],
+      firstSubresource.level
+    );
 
     const rep = kTexelRepresentationInfo[format];
     const texelData = new Uint8Array(rep.pack(rep.encode(this.stateToTexelComponents[state])));
     const { buffer, bytesPerRow, rowsPerImage } = createTextureUploadBuffer(
-    texelData,
-    this.device,
-    format,
-    this.p.dimension,
-    [largestWidth, largestHeight, largestDepth]);
-
+      texelData,
+      this.device,
+      format,
+      this.p.dimension,
+      [largestWidth, largestHeight, largestDepth]
+    );
 
     const commandEncoder = this.device.createCommandEncoder();
 
     for (const { level, layer } of subresourceRange.each()) {
       const [width, height, depth] = virtualMipSize(
-      this.p.dimension,
-      [this.textureWidth, this.textureHeight, this.textureDepth],
-      level);
-
+        this.p.dimension,
+        [this.textureWidth, this.textureHeight, this.textureDepth],
+        level
+      );
 
       commandEncoder.copyBufferToTexture(
-      {
-        buffer,
-        bytesPerRow,
-        rowsPerImage
-      },
-      { texture, mipLevel: level, origin: { x: 0, y: 0, z: layer } },
-      { width, height, depthOrArrayLayers: depth });
-
+        {
+          buffer,
+          bytesPerRow,
+          rowsPerImage
+        },
+        { texture, mipLevel: level, origin: { x: 0, y: 0, z: layer } },
+        { width, height, depthOrArrayLayers: depth }
+      );
     }
     this.queue.submit([commandEncoder.finish()]);
     buffer.destroy();
@@ -459,8 +458,8 @@ ReadMethod.CopyToBuffer,
 ReadMethod.CopyToTexture,
 ReadMethod.Sample,
 ReadMethod.DepthTest,
-ReadMethod.StencilTest])
-
+ReadMethod.StencilTest]
+)
 // [3] compressed formats
 .combine('format', kUncompressedTextureFormats).
 filter(({ dimension, format }) => textureDimensionAndFormatCompatible(dimension, format)).
@@ -473,10 +472,10 @@ unless(({ readMethod, format, aspect }) => {
     readMethod === ReadMethod.StencilTest && (!info.stencil || aspect === 'depth-only') ||
     readMethod === ReadMethod.ColorBlending && !info.color ||
     // [1]: Test with depth/stencil sampling
-    readMethod === ReadMethod.Sample && (info.depth || info.stencil) ||
+    readMethod === ReadMethod.Sample && (!!info.depth || !!info.stencil) ||
     aspect === 'depth-only' && !info.depth ||
     aspect === 'stencil-only' && !info.stencil ||
-    aspect === 'all' && info.depth && info.stencil ||
+    aspect === 'all' && !!info.depth && !!info.stencil ||
     // Cannot copy from a packed depth format.
     // [2]: Test copying out of the stencil aspect.
     (readMethod === ReadMethod.CopyToBuffer || readMethod === ReadMethod.CopyToTexture) && (
@@ -488,11 +487,11 @@ combine('mipLevelCount', kMipLevelCounts)
 .unless((p) => p.dimension === '1d' && p.mipLevelCount !== 1).
 combine('sampleCount', kSampleCounts).
 unless(
-({ readMethod, sampleCount }) =>
-// We can only read from multisampled textures by sampling.
-sampleCount > 1 && (
-readMethod === ReadMethod.CopyToBuffer || readMethod === ReadMethod.CopyToTexture))
-
+  ({ readMethod, sampleCount }) =>
+  // We can only read from multisampled textures by sampling.
+  sampleCount > 1 && (
+  readMethod === ReadMethod.CopyToBuffer || readMethod === ReadMethod.CopyToTexture)
+)
 // Multisampled textures may only have one mip
 .unless(({ sampleCount, mipLevelCount }) => sampleCount > 1 && mipLevelCount > 1).
 combine('uninitializeMethod', kUninitializeMethods).
@@ -501,8 +500,8 @@ unless(({ dimension, readMethod, uninitializeMethod, format, sampleCount }) => {
   return (
     dimension !== '2d' && (
     sampleCount > 1 ||
-    formatInfo.depth ||
-    formatInfo.stencil ||
+    !!formatInfo.depth ||
+    !!formatInfo.stencil ||
     readMethod === ReadMethod.DepthTest ||
     readMethod === ReadMethod.StencilTest ||
     readMethod === ReadMethod.ColorBlending ||
@@ -518,8 +517,8 @@ expandWithParams(function* ({ dimension }) {
     case '1d':
     case '3d':
       yield { layerCount: 1 };
-      break;}
-
+      break;
+  }
 })
 // Multisampled 3D / 2D array textures not supported.
 .unless(({ sampleCount, layerCount }) => sampleCount > 1 && layerCount > 1).
@@ -529,7 +528,7 @@ unless(({ format, sampleCount, uninitializeMethod, readMethod }) => {
 
   return (
     (usage & GPUConst.TextureUsage.RENDER_ATTACHMENT) !== 0 && !info.renderable ||
-    (usage & GPUConst.TextureUsage.STORAGE_BINDING) !== 0 && !info.storage ||
+    (usage & GPUConst.TextureUsage.STORAGE_BINDING) !== 0 && !info.color?.storage ||
     sampleCount > 1 && !info.multisample);
 
 }).
@@ -555,8 +554,8 @@ filter(({ canaryOnCreation, format }) => {
 
 import { checkContentsByBufferCopy, checkContentsByTextureCopy } from './check_texture/by_copy.js';
 import {
-checkContentsByDepthTest,
-checkContentsByStencilTest } from
+  checkContentsByDepthTest,
+  checkContentsByStencilTest } from
 './check_texture/by_ds_test.js';
 import { checkContentsBySampling } from './check_texture/by_sampling.js';
 
@@ -575,15 +574,16 @@ export const g = makeTestGroup(TextureZeroInitTest);
 g.test('uninitialized_texture_is_zero').
 params(kTestParams).
 beforeAllSubcases((t) => {
+  t.skipIfTextureFormatNotSupported(t.params.format);
   t.selectDeviceOrSkipTestCase(kTextureFormatInfo[t.params.format].feature);
 }).
 fn((t) => {
   const usage = getRequiredTextureUsage(
-  t.params.format,
-  t.params.sampleCount,
-  t.params.uninitializeMethod,
-  t.params.readMethod);
-
+    t.params.format,
+    t.params.sampleCount,
+    t.params.uninitializeMethod,
+    t.params.readMethod
+  );
 
   const texture = t.device.createTexture({
     size: [t.textureWidth, t.textureHeight, t.textureDepthOrArrayLayers],
@@ -616,30 +616,30 @@ fn((t) => {
       }
       break;
     default:
-      unreachable();}
-
+      unreachable();
+  }
 
   // Check that all uninitialized resources are zero.
   for (const subresourceRange of t.iterateUninitializedSubresources()) {
     checkContentsImpl[t.params.readMethod](
-    t,
-    t.params,
-    texture,
-    InitializedState.Zero,
-    subresourceRange);
-
+      t,
+      t.params,
+      texture,
+      InitializedState.Zero,
+      subresourceRange
+    );
   }
 
   if (t.params.canaryOnCreation) {
     // Check the all other resources are unchanged.
     for (const subresourceRange of t.iterateInitializedSubresources()) {
       checkContentsImpl[t.params.readMethod](
-      t,
-      t.params,
-      texture,
-      InitializedState.Canary,
-      subresourceRange);
-
+        t,
+        t.params,
+        texture,
+        InitializedState.Canary,
+        subresourceRange
+      );
     }
   }
 });
