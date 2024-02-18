@@ -2,7 +2,6 @@ export const description = `
 Tests for the behavior of read-only storage textures.
 
 TODO:
-- Test the use of read-only storage textures in vertex shader
 - Test 1D and 3D textures
 - Test mipmap level > 0
 - Test bgra8unorm with 'bgra8unorm-storage'
@@ -18,7 +17,7 @@ import {
   kTextureFormatInfo,
 } from '../../../format_info.js';
 import { GPUTest } from '../../../gpu_test.js';
-import { ShaderStage } from '../../../shader/validation/decl/util.js';
+import { kShaderStages, ShaderStage } from '../../../shader/validation/decl/util.js';
 
 function ComponentCount(format: ColorTextureFormat): number {
   switch (format) {
@@ -376,7 +375,126 @@ class F extends GPUTest {
         break;
       }
       case 'vertex': {
-        unreachable();
+        // Draw one vertex (as one point in the point list) at (coordX + 0.5, coordY + 0.5) in the
+        // storageTexture.width * storageTexture.height grid (in frame buffer coordinates), and each
+        // vertex carries all the texels at (coordX, coordY) in every array layer of the read-only
+        // storage texture in its vertex attributes.
+        let vertexOutputs = '';
+        for (let layer = 0; layer < storageTexture.depthOrArrayLayers; ++layer) {
+          vertexOutputs = vertexOutputs.concat(
+            `
+            @location(${layer + 1}) @interpolate(flat)
+            vertex_out${layer}: ${this.GetOutputBufferWGSLType(format)},`
+          );
+        }
+
+        let loadFromTextureWGSL = '';
+        if (storageTexture.depthOrArrayLayers === 1) {
+          loadFromTextureWGSL = `
+            output.vertex_out0 = textureLoad(readOnlyTexture, vec2u(coordX, coordY));`;
+        } else {
+          for (let z = 0; z < storageTexture.depthOrArrayLayers; ++z) {
+            loadFromTextureWGSL = loadFromTextureWGSL.concat(
+              `output.vertex_out${z} = textureLoad(readOnlyTexture, vec2u(coordX, coordY), ${z});`
+            );
+          }
+        }
+
+        let outputToBufferWGSL = '';
+        for (let layer = 0; layer < storageTexture.depthOrArrayLayers; ++layer) {
+          outputToBufferWGSL = outputToBufferWGSL.concat(
+            `
+            let outputIndex${layer} =
+              storageTextureTexelCountPerImage * ${layer}u +
+              fragmentInput.tex_coord.y * ${storageTexture.width}u + fragmentInput.tex_coord.x;
+            outputBuffer[outputIndex${layer}] = fragmentInput.vertex_out${layer};`
+          );
+        }
+
+        const shader = `
+        ${bindingResourceDeclaration}
+        struct VertexOutput {
+          @builtin(position) my_pos: vec4f,
+          @location(0) @interpolate(flat) tex_coord: vec2u,
+          ${vertexOutputs}
+        }
+        @vertex
+        fn vs_main(@builtin(vertex_index) vertexIndex : u32) -> VertexOutput {
+            var output : VertexOutput;
+            let coordX = vertexIndex % ${storageTexture.width}u;
+            let coordY = vertexIndex / ${storageTexture.width}u;
+
+            let outputPosX =
+              -1.0 + 1.0 / f32(${storageTexture.width}) +
+              2.0 / f32(${storageTexture.width}) * f32(coordX);
+            let outputPosY =
+              -1.0 + 1.0 / f32(${storageTexture.height}) +
+              2.0 / f32(${storageTexture.height}) * f32(coordY);
+            output.my_pos = vec4f(outputPosX, outputPosY, 0.0, 1.0);
+
+            output.tex_coord = vec2u(coordX, coordY);
+
+            ${loadFromTextureWGSL}
+
+            return output;
+        }
+        @fragment
+        fn fs_main(fragmentInput : VertexOutput) -> @location(0) vec4f {
+          let storageTextureTexelCountPerImage = ${storageTexture.width * storageTexture.height}u;
+          ${outputToBufferWGSL}
+          return vec4f(0.0, 1.0, 0.0, 1.0);
+        }
+        `;
+
+        const renderPipeline = this.device.createRenderPipeline({
+          layout: 'auto',
+          vertex: {
+            module: this.device.createShaderModule({
+              code: shader,
+            }),
+          },
+          fragment: {
+            module: this.device.createShaderModule({
+              code: shader,
+            }),
+            targets: [
+              {
+                format: 'rgba8unorm',
+              },
+            ],
+          },
+          primitive: {
+            topology: 'point-list',
+          },
+        });
+
+        const bindGroup = this.device.createBindGroup({
+          layout: renderPipeline.getBindGroupLayout(0),
+          entries: bindGroupEntries,
+        });
+
+        const placeholderColorTexture = this.device.createTexture({
+          size: [storageTexture.width, storageTexture.height, 1],
+          usage: GPUTextureUsage.RENDER_ATTACHMENT,
+          format: 'rgba8unorm',
+        });
+        this.trackForCleanup(placeholderColorTexture);
+
+        const renderPassEncoder = commandEncoder.beginRenderPass({
+          colorAttachments: [
+            {
+              view: placeholderColorTexture.createView(),
+              loadOp: 'clear',
+              clearValue: { r: 0, g: 0, b: 0, a: 0 },
+              storeOp: 'store',
+            },
+          ],
+        });
+        renderPassEncoder.setPipeline(renderPipeline);
+        renderPassEncoder.setBindGroup(0, bindGroup);
+        renderPassEncoder.draw(storageTexture.width * storageTexture.height);
+        renderPassEncoder.end();
+
         break;
       }
     }
@@ -397,7 +515,7 @@ g.test('basic')
     u
       .combine('format', kColorTextureFormats)
       .filter(p => kTextureFormatInfo[p.format].color?.storage === true)
-      .combine('shaderStage', ['fragment', 'compute'] as const)
+      .combine('shaderStage', kShaderStages)
       .combine('depthOrArrayLayers', [1, 2] as const)
   )
   .fn(t => {
