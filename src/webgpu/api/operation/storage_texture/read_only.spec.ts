@@ -2,7 +2,6 @@ export const description = `
 Tests for the behavior of read-only storage textures.
 
 TODO:
-- Test 1D and 3D textures
 - Test mipmap level > 0
 - Test bgra8unorm with 'bgra8unorm-storage'
 - Test resource usage transitions with read-only storage textures
@@ -11,6 +10,7 @@ TODO:
 import { makeTestGroup } from '../../../../common/framework/test_group.js';
 import { unreachable, assert } from '../../../../common/util/util.js';
 import { Float16Array } from '../../../../external/petamoriken/float16/float16.js';
+import { kTextureDimensions } from '../../../capability_info.js';
 import {
   ColorTextureFormat,
   kColorTextureFormats,
@@ -229,8 +229,19 @@ class F extends GPUTest {
     format: ColorTextureFormat,
     outputBuffer: GPUBuffer
   ) {
-    const declaration =
-      storageTexture.depthOrArrayLayers > 1 ? 'texture_storage_2d_array' : 'texture_storage_2d';
+    let declaration = '';
+    switch (storageTexture.dimension) {
+      case '1d':
+        declaration = 'texture_storage_1d';
+        break;
+      case '2d':
+        declaration =
+          storageTexture.depthOrArrayLayers > 1 ? 'texture_storage_2d_array' : 'texture_storage_2d';
+        break;
+      case '3d':
+        declaration = 'texture_storage_3d';
+        break;
+    }
     const textureDeclaration = `
     @group(0) @binding(0) var readOnlyTexture: ${declaration}<${format}, read>;
     `;
@@ -257,15 +268,27 @@ class F extends GPUTest {
 
     switch (shaderStage) {
       case 'compute': {
-        const textureLoadCoord =
-          storageTexture.depthOrArrayLayers > 1
-            ? `vec2u(invocationID.x, invocationID.y), invocationID.z`
-            : `vec2u(invocationID.x, invocationID.y)`;
+        let textureLoadCoord = '';
+        switch (storageTexture.dimension) {
+          case '1d':
+            textureLoadCoord = 'invocationID.x';
+            break;
+          case '2d':
+            textureLoadCoord =
+              storageTexture.depthOrArrayLayers > 1
+                ? `vec2u(invocationID.x, invocationID.y), invocationID.z`
+                : `vec2u(invocationID.x, invocationID.y)`;
+            break;
+          case '3d':
+            textureLoadCoord = 'invocationID';
+            break;
+        }
 
         const computeShader = `
       ${bindingResourceDeclaration}
       @compute
-      @workgroup_size(${storageTexture.width}, ${storageTexture.height}, ${storageTexture.depthOrArrayLayers})
+      @workgroup_size(
+        ${storageTexture.width}, ${storageTexture.height}, ${storageTexture.depthOrArrayLayers})
       fn main(
         @builtin(local_invocation_id) invocationID: vec3u,
         @builtin(local_invocation_index) invocationIndex: u32) {
@@ -293,8 +316,19 @@ class F extends GPUTest {
         break;
       }
       case 'fragment': {
-        const textureLoadCoord =
-          storageTexture.depthOrArrayLayers > 1 ? 'textureCoord, z' : 'textureCoord';
+        let textureLoadCoord = '';
+        switch (storageTexture.dimension) {
+          case '1d':
+            textureLoadCoord = 'textureCoord.x';
+            break;
+          case '2d':
+            textureLoadCoord =
+              storageTexture.depthOrArrayLayers > 1 ? 'textureCoord, z' : 'textureCoord';
+            break;
+          case '3d':
+            textureLoadCoord = 'vec3u(textureCoord, z)';
+            break;
+        }
 
         const fragmentShader = `
         ${bindingResourceDeclaration}
@@ -389,15 +423,31 @@ class F extends GPUTest {
         }
 
         let loadFromTextureWGSL = '';
-        if (storageTexture.depthOrArrayLayers === 1) {
-          loadFromTextureWGSL = `
-            output.vertex_out0 = textureLoad(readOnlyTexture, vec2u(coordX, coordY));`;
-        } else {
-          for (let z = 0; z < storageTexture.depthOrArrayLayers; ++z) {
-            loadFromTextureWGSL = loadFromTextureWGSL.concat(
-              `output.vertex_out${z} = textureLoad(readOnlyTexture, vec2u(coordX, coordY), ${z});`
-            );
-          }
+        switch (storageTexture.dimension) {
+          case '1d':
+            loadFromTextureWGSL = `
+              output.vertex_out0 = textureLoad(readOnlyTexture, coordX);`;
+            break;
+          case '2d':
+            if (storageTexture.depthOrArrayLayers === 1) {
+              loadFromTextureWGSL = `
+                output.vertex_out0 = textureLoad(readOnlyTexture, vec2u(coordX, coordY));`;
+            } else {
+              for (let z = 0; z < storageTexture.depthOrArrayLayers; ++z) {
+                loadFromTextureWGSL = loadFromTextureWGSL.concat(
+                  `output.vertex_out${z} =
+                    textureLoad(readOnlyTexture, vec2u(coordX, coordY), ${z});`
+                );
+              }
+            }
+            break;
+          case '3d':
+            for (let z = 0; z < storageTexture.depthOrArrayLayers; ++z) {
+              loadFromTextureWGSL = loadFromTextureWGSL.concat(
+                `output.vertex_out${z} = textureLoad(readOnlyTexture, vec3u(coordX, coordY, ${z}));`
+              );
+            }
+            break;
         }
 
         let outputToBufferWGSL = '';
@@ -516,17 +566,20 @@ g.test('basic')
       .combine('format', kColorTextureFormats)
       .filter(p => kTextureFormatInfo[p.format].color?.storage === true)
       .combine('shaderStage', kShaderStages)
+      .combine('textureDimension', kTextureDimensions)
       .combine('depthOrArrayLayers', [1, 2] as const)
+      .unless(p => p.textureDimension === '1d' && p.depthOrArrayLayers > 1)
   )
   .fn(t => {
-    const { format, shaderStage, depthOrArrayLayers } = t.params;
+    const { format, shaderStage, textureDimension, depthOrArrayLayers } = t.params;
 
     const kWidth = 8;
-    const height = 8;
+    const height = textureDimension === '1d' ? 1 : 8;
     const textureSize = [kWidth, height, depthOrArrayLayers] as const;
     const storageTexture = t.device.createTexture({
       format,
       size: textureSize,
+      dimension: textureDimension,
       usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST | GPUTextureUsage.STORAGE_BINDING,
     });
     t.trackForCleanup(storageTexture);
