@@ -3,9 +3,13 @@
 **/export const description = `
 Tests that you can not use bgra8unorm-srgb in compat mode.
 Tests that textureBindingViewDimension must compatible with texture dimension
-`;
-import { makeTestGroup } from '../../../../../common/framework/test_group.js';
+`;import { makeTestGroup } from '../../../../../common/framework/test_group.js';
 import { kTextureDimensions, kTextureViewDimensions } from '../../../../capability_info.js';
+import {
+  kColorTextureFormats,
+  kCompatModeUnsupportedStorageTextureFormats,
+  kTextureFormatInfo } from
+'../../../../format_info.js';
 import { getTextureDimensionFromView } from '../../../../util/texture/base.js';
 import { CompatibilityTest } from '../../../compatibility_test.js';
 
@@ -14,10 +18,10 @@ export const g = makeTestGroup(CompatibilityTest);
 g.test('unsupportedTextureFormats').
 desc(`Tests that you can not create a bgra8unorm-srgb texture in compat mode.`).
 fn((t) => {
-  t.expectGPUError(
+  t.expectGPUErrorInCompatibilityMode(
     'validation',
     () =>
-    t.device.createTexture({
+    t.createTextureTracked({
       size: [1, 1, 1],
       format: 'bgra8unorm-srgb',
       usage: GPUTextureUsage.TEXTURE_BINDING
@@ -31,10 +35,10 @@ desc(
   `Tests that you can not create a bgra8unorm texture with a bgra8unorm-srgb viewFormat in compat mode.`
 ).
 fn((t) => {
-  t.expectGPUError(
+  t.expectGPUErrorInCompatibilityMode(
     'validation',
     () =>
-    t.device.createTexture({
+    t.createTextureTracked({
       size: [1, 1, 1],
       format: 'bgra8unorm',
       viewFormats: ['bgra8unorm-srgb'],
@@ -55,19 +59,23 @@ combine('textureBindingViewDimension', kTextureViewDimensions)
 ).
 fn((t) => {
   const { dimension, textureBindingViewDimension } = t.params;
-  const depthOrArrayLayers = textureBindingViewDimension === '1d' || textureBindingViewDimension === '2d' ? 1 : 6;
+  const depthOrArrayLayers =
+  dimension === '1d' ||
+  textureBindingViewDimension === '1d' ||
+  textureBindingViewDimension === '2d' ?
+  1 :
+  6;
   const shouldError = getTextureDimensionFromView(textureBindingViewDimension) !== dimension;
-  t.expectGPUError(
+  t.expectGPUErrorInCompatibilityMode(
     'validation',
     () => {
-      const texture = t.device.createTexture({
+      t.createTextureTracked({
         size: [1, 1, depthOrArrayLayers],
         format: 'rgba8unorm',
         usage: GPUTextureUsage.TEXTURE_BINDING,
         dimension,
         textureBindingViewDimension
       }); // MAINTENANCE_TODO: remove cast once textureBindingViewDimension is added to IDL
-      t.trackForCleanup(texture);
     },
     shouldError
   );
@@ -90,18 +98,81 @@ fn((t) => {
   const shouldError =
   textureBindingViewDimension === '2d' && depthOrArrayLayers !== 1 ||
   textureBindingViewDimension === 'cube' && depthOrArrayLayers !== 6;
-  t.expectGPUError(
+  t.expectGPUErrorInCompatibilityMode(
     'validation',
     () => {
-      const texture = t.device.createTexture({
+      t.createTextureTracked({
         size: [1, 1, depthOrArrayLayers],
         format: 'rgba8unorm',
         usage: GPUTextureUsage.TEXTURE_BINDING,
         textureBindingViewDimension
       }); // MAINTENANCE_TODO: remove cast once textureBindingViewDimension is added to IDL
-      t.trackForCleanup(texture);
     },
     shouldError
+  );
+});
+
+g.test('format_reinterpretation').
+desc(
+  `
+    Tests that you can not request different view formats when creating a texture.
+    For example, rgba8unorm can not be viewed as rgba8unorm-srgb
+  `
+).
+params((u) =>
+u //
+.combine('format', kColorTextureFormats).
+filter(
+  ({ format }) =>
+  !!kTextureFormatInfo[format].baseFormat &&
+  kTextureFormatInfo[format].baseFormat !== format
+)
+).
+beforeAllSubcases((t) => {
+  const info = kTextureFormatInfo[t.params.format];
+  t.skipIfTextureFormatNotSupported(t.params.format);
+  t.selectDeviceOrSkipTestCase(info.feature);
+}).
+fn((t) => {
+  const { format } = t.params;
+  const info = kTextureFormatInfo[format];
+
+  const formatPairs = [
+  { format, viewFormats: [info.baseFormat] },
+  { format: info.baseFormat, viewFormats: [format] },
+  { format, viewFormats: [format, info.baseFormat] },
+  { format: info.baseFormat, viewFormats: [format, info.baseFormat] }];
+
+  for (const { format, viewFormats } of formatPairs) {
+    t.expectGPUErrorInCompatibilityMode(
+      'validation',
+      () => {
+        t.createTextureTracked({
+          size: [info.blockWidth, info.blockHeight],
+          format,
+          viewFormats,
+          usage: GPUTextureUsage.TEXTURE_BINDING
+        });
+      },
+      true
+    );
+  }
+});
+
+g.test('unsupportedStorageTextureFormats').
+desc(`Tests that you can not create unsupported storage texture formats in compat mode.`).
+params((u) => u.combine('format', kCompatModeUnsupportedStorageTextureFormats)).
+fn((t) => {
+  const { format } = t.params;
+  t.expectGPUErrorInCompatibilityMode(
+    'validation',
+    () =>
+    t.createTextureTracked({
+      size: [1, 1, 1],
+      format,
+      usage: GPUTextureUsage.STORAGE_BINDING
+    }),
+    true
   );
 });
 //# sourceMappingURL=createTexture.spec.js.map

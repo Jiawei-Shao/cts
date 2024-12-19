@@ -51,7 +51,7 @@ const kBt709PixelValue = {
   }
 };
 
-function videoTable({
+function makeTable({
   table
 
 
@@ -66,143 +66,281 @@ function videoTable({
   );
 }
 
+// Video expected pixel value table. Finding expected pixel value
+// with video color space and dst color space.
+export const kVideoExpectedColors = makeTable({
+  table: {
+    bt601: {
+      'display-p3': {
+        yellow: srgbToDisplayP3(kBt601PixelValue.srgb.yellow),
+        red: srgbToDisplayP3(kBt601PixelValue.srgb.red),
+        blue: srgbToDisplayP3(kBt601PixelValue.srgb.blue),
+        green: srgbToDisplayP3(kBt601PixelValue.srgb.green)
+      },
+      srgb: {
+        yellow: kBt601PixelValue.srgb.yellow,
+        red: kBt601PixelValue.srgb.red,
+        blue: kBt601PixelValue.srgb.blue,
+        green: kBt601PixelValue.srgb.green
+      }
+    },
+    bt709: {
+      'display-p3': {
+        yellow: srgbToDisplayP3(kBt709PixelValue.srgb.yellow),
+        red: srgbToDisplayP3(kBt709PixelValue.srgb.red),
+        blue: srgbToDisplayP3(kBt709PixelValue.srgb.blue),
+        green: srgbToDisplayP3(kBt709PixelValue.srgb.green)
+      },
+      srgb: {
+        yellow: kBt709PixelValue.srgb.yellow,
+        red: kBt709PixelValue.srgb.red,
+        blue: kBt709PixelValue.srgb.blue,
+        green: kBt709PixelValue.srgb.green
+      }
+    }
+  }
+});
+
 // MAINTENANCE_TODO: Add BT.2020 video in table.
-export const kVideoInfo = videoTable({
+// Video container and codec defines several transform ops to apply to raw decoded frame to display.
+// Our test cases covers 'visible rect' and 'rotation'.
+// 'visible rect' is associated with the
+// video bitstream and should apply to the raw decoded frames before any transformation.
+// 'rotation' is associated with the track or presentation and should transform
+// the whole visible rect (e.g. 90-degree rotate makes visible rect of vertical video to horizontal)
+// The order to apply these transformations is below:
+
+// [raw decoded frame] ----visible rect clipping ---->[visible frame] ---rotation  ---> present
+//      ^                                                                   ^
+//      |                                                                   |
+// coded size                                                           display size
+// The table holds test videos meta infos, including mimeType to check browser compatibility
+// video color space, raw frame content layout and the frame displayed layout.
+export const kVideoInfo = makeTable({
   table: {
     'four-colors-vp8-bt601.webm': {
       mimeType: 'video/webm; codecs=vp8',
-      presentColors: {
-        'display-p3': {
-          topLeftColor: srgbToDisplayP3(kBt601PixelValue.srgb.yellow),
-          topRightColor: srgbToDisplayP3(kBt601PixelValue.srgb.red),
-          bottomLeftColor: srgbToDisplayP3(kBt601PixelValue.srgb.blue),
-          bottomRightColor: srgbToDisplayP3(kBt601PixelValue.srgb.green)
-        },
-        srgb: {
-          topLeftColor: kBt601PixelValue.srgb.yellow,
-          topRightColor: kBt601PixelValue.srgb.red,
-          bottomLeftColor: kBt601PixelValue.srgb.blue,
-          bottomRightColor: kBt601PixelValue.srgb.green
-        }
-      }
-    },
-    'four-colors-theora-bt601.ogv': {
-      mimeType: 'video/ogg; codecs=theora',
-      presentColors: {
-        'display-p3': {
-          topLeftColor: srgbToDisplayP3(kBt601PixelValue.srgb.yellow),
-          topRightColor: srgbToDisplayP3(kBt601PixelValue.srgb.red),
-          bottomLeftColor: srgbToDisplayP3(kBt601PixelValue.srgb.blue),
-          bottomRightColor: srgbToDisplayP3(kBt601PixelValue.srgb.green)
-        },
-        srgb: {
-          topLeftColor: kBt601PixelValue.srgb.yellow,
-          topRightColor: kBt601PixelValue.srgb.red,
-          bottomLeftColor: kBt601PixelValue.srgb.blue,
-          bottomRightColor: kBt601PixelValue.srgb.green
-        }
+      colorSpace: 'bt601',
+      coded: {
+        topLeftColor: 'yellow',
+        topRightColor: 'red',
+        bottomLeftColor: 'blue',
+        bottomRightColor: 'green'
+      },
+      display: {
+        topLeftColor: 'yellow',
+        topRightColor: 'red',
+        bottomLeftColor: 'blue',
+        bottomRightColor: 'green'
       }
     },
     'four-colors-h264-bt601.mp4': {
       mimeType: 'video/mp4; codecs=avc1.4d400c',
-      presentColors: {
-        'display-p3': {
-          topLeftColor: srgbToDisplayP3(kBt601PixelValue.srgb.yellow),
-          topRightColor: srgbToDisplayP3(kBt601PixelValue.srgb.red),
-          bottomLeftColor: srgbToDisplayP3(kBt601PixelValue.srgb.blue),
-          bottomRightColor: srgbToDisplayP3(kBt601PixelValue.srgb.green)
-        },
-        srgb: {
-          topLeftColor: kBt601PixelValue.srgb.yellow,
-          topRightColor: kBt601PixelValue.srgb.red,
-          bottomLeftColor: kBt601PixelValue.srgb.blue,
-          bottomRightColor: kBt601PixelValue.srgb.green
-        }
+      colorSpace: 'bt601',
+      coded: {
+        topLeftColor: 'yellow',
+        topRightColor: 'red',
+        bottomLeftColor: 'blue',
+        bottomRightColor: 'green'
+      },
+      display: {
+        topLeftColor: 'yellow',
+        topRightColor: 'red',
+        bottomLeftColor: 'blue',
+        bottomRightColor: 'green'
       }
     },
     'four-colors-vp9-bt601.webm': {
       mimeType: 'video/webm; codecs=vp9',
-      presentColors: {
-        'display-p3': {
-          topLeftColor: srgbToDisplayP3(kBt601PixelValue.srgb.yellow),
-          topRightColor: srgbToDisplayP3(kBt601PixelValue.srgb.red),
-          bottomLeftColor: srgbToDisplayP3(kBt601PixelValue.srgb.blue),
-          bottomRightColor: srgbToDisplayP3(kBt601PixelValue.srgb.green)
-        },
-        srgb: {
-          topLeftColor: kBt601PixelValue.srgb.yellow,
-          topRightColor: kBt601PixelValue.srgb.red,
-          bottomLeftColor: kBt601PixelValue.srgb.blue,
-          bottomRightColor: kBt601PixelValue.srgb.green
-        }
+      colorSpace: 'bt601',
+      coded: {
+        topLeftColor: 'yellow',
+        topRightColor: 'red',
+        bottomLeftColor: 'blue',
+        bottomRightColor: 'green'
+      },
+      display: {
+        topLeftColor: 'yellow',
+        topRightColor: 'red',
+        bottomLeftColor: 'blue',
+        bottomRightColor: 'green'
       }
     },
     'four-colors-vp9-bt709.webm': {
       mimeType: 'video/webm; codecs=vp9',
-      presentColors: {
-        'display-p3': {
-          topLeftColor: srgbToDisplayP3(kBt709PixelValue.srgb.yellow),
-          topRightColor: srgbToDisplayP3(kBt709PixelValue.srgb.red),
-          bottomLeftColor: srgbToDisplayP3(kBt709PixelValue.srgb.blue),
-          bottomRightColor: srgbToDisplayP3(kBt709PixelValue.srgb.green)
-        },
-        srgb: {
-          topLeftColor: kBt709PixelValue.srgb.yellow,
-          topRightColor: kBt709PixelValue.srgb.red,
-          bottomLeftColor: kBt709PixelValue.srgb.blue,
-          bottomRightColor: kBt709PixelValue.srgb.green
-        }
+      colorSpace: 'bt709',
+      coded: {
+        topLeftColor: 'yellow',
+        topRightColor: 'red',
+        bottomLeftColor: 'blue',
+        bottomRightColor: 'green'
+      },
+      display: {
+        topLeftColor: 'yellow',
+        topRightColor: 'red',
+        bottomLeftColor: 'blue',
+        bottomRightColor: 'green'
       }
     },
+    // video coded content has been rotate
     'four-colors-h264-bt601-rotate-90.mp4': {
       mimeType: 'video/mp4; codecs=avc1.4d400c',
-      presentColors: {
-        'display-p3': {
-          topLeftColor: srgbToDisplayP3(kBt601PixelValue.srgb.red),
-          topRightColor: srgbToDisplayP3(kBt601PixelValue.srgb.green),
-          bottomLeftColor: srgbToDisplayP3(kBt601PixelValue.srgb.yellow),
-          bottomRightColor: srgbToDisplayP3(kBt601PixelValue.srgb.blue)
-        },
-        srgb: {
-          topLeftColor: kBt601PixelValue.srgb.red,
-          topRightColor: kBt601PixelValue.srgb.green,
-          bottomLeftColor: kBt601PixelValue.srgb.yellow,
-          bottomRightColor: kBt601PixelValue.srgb.blue
-        }
+      colorSpace: 'bt601',
+      coded: {
+        topLeftColor: 'red',
+        topRightColor: 'green',
+        bottomLeftColor: 'yellow',
+        bottomRightColor: 'blue'
+      },
+      display: {
+        topLeftColor: 'yellow',
+        topRightColor: 'red',
+        bottomLeftColor: 'blue',
+        bottomRightColor: 'green'
       }
     },
     'four-colors-h264-bt601-rotate-180.mp4': {
       mimeType: 'video/mp4; codecs=avc1.4d400c',
-      presentColors: {
-        'display-p3': {
-          topLeftColor: srgbToDisplayP3(kBt601PixelValue.srgb.green),
-          topRightColor: srgbToDisplayP3(kBt601PixelValue.srgb.blue),
-          bottomLeftColor: srgbToDisplayP3(kBt601PixelValue.srgb.red),
-          bottomRightColor: srgbToDisplayP3(kBt601PixelValue.srgb.yellow)
-        },
-        srgb: {
-          topLeftColor: kBt601PixelValue.srgb.green,
-          topRightColor: kBt601PixelValue.srgb.blue,
-          bottomLeftColor: kBt601PixelValue.srgb.red,
-          bottomRightColor: kBt601PixelValue.srgb.yellow
-        }
+      colorSpace: 'bt601',
+      coded: {
+        topLeftColor: 'green',
+        topRightColor: 'blue',
+        bottomLeftColor: 'red',
+        bottomRightColor: 'yellow'
+      },
+      display: {
+        topLeftColor: 'yellow',
+        topRightColor: 'red',
+        bottomLeftColor: 'blue',
+        bottomRightColor: 'green'
       }
     },
     'four-colors-h264-bt601-rotate-270.mp4': {
       mimeType: 'video/mp4; codecs=avc1.4d400c',
-      presentColors: {
-        'display-p3': {
-          topLeftColor: srgbToDisplayP3(kBt601PixelValue.srgb.blue),
-          topRightColor: srgbToDisplayP3(kBt601PixelValue.srgb.yellow),
-          bottomLeftColor: srgbToDisplayP3(kBt601PixelValue.srgb.green),
-          bottomRightColor: srgbToDisplayP3(kBt601PixelValue.srgb.red)
-        },
-        srgb: {
-          topLeftColor: kBt601PixelValue.srgb.blue,
-          topRightColor: kBt601PixelValue.srgb.yellow,
-          bottomLeftColor: kBt601PixelValue.srgb.green,
-          bottomRightColor: kBt601PixelValue.srgb.red
-        }
+      colorSpace: 'bt601',
+      coded: {
+        topLeftColor: 'blue',
+        topRightColor: 'yellow',
+        bottomLeftColor: 'green',
+        bottomRightColor: 'red'
+      },
+      display: {
+        topLeftColor: 'yellow',
+        topRightColor: 'red',
+        bottomLeftColor: 'blue',
+        bottomRightColor: 'green'
+      }
+    },
+    'four-colors-vp9-bt601-rotate-90.mp4': {
+      mimeType: 'video/mp4; codecs=vp09.00.10.08',
+      colorSpace: 'bt601',
+      coded: {
+        topLeftColor: 'red',
+        topRightColor: 'green',
+        bottomLeftColor: 'yellow',
+        bottomRightColor: 'blue'
+      },
+      display: {
+        topLeftColor: 'yellow',
+        topRightColor: 'red',
+        bottomLeftColor: 'blue',
+        bottomRightColor: 'green'
+      }
+    },
+    'four-colors-vp9-bt601-rotate-180.mp4': {
+      mimeType: 'video/mp4; codecs=vp09.00.10.08',
+      colorSpace: 'bt601',
+      coded: {
+        topLeftColor: 'green',
+        topRightColor: 'blue',
+        bottomLeftColor: 'red',
+        bottomRightColor: 'yellow'
+      },
+      display: {
+        topLeftColor: 'yellow',
+        topRightColor: 'red',
+        bottomLeftColor: 'blue',
+        bottomRightColor: 'green'
+      }
+    },
+    'four-colors-vp9-bt601-rotate-270.mp4': {
+      mimeType: 'video/mp4; codecs=vp09.00.10.08',
+      colorSpace: 'bt601',
+      coded: {
+        topLeftColor: 'blue',
+        topRightColor: 'yellow',
+        bottomLeftColor: 'green',
+        bottomRightColor: 'red'
+      },
+      display: {
+        topLeftColor: 'yellow',
+        topRightColor: 'red',
+        bottomLeftColor: 'blue',
+        bottomRightColor: 'green'
+      }
+    },
+    'four-colors-h264-bt601-hflip.mp4': {
+      mimeType: 'video/mp4; codecs=avc1.4d400c',
+      colorSpace: 'bt601',
+      coded: {
+        topLeftColor: 'yellow',
+        topRightColor: 'red',
+        bottomLeftColor: 'blue',
+        bottomRightColor: 'green'
+      },
+      display: {
+        topLeftColor: 'red',
+        topRightColor: 'yellow',
+        bottomLeftColor: 'green',
+        bottomRightColor: 'blue'
+      }
+    },
+    'four-colors-h264-bt601-vflip.mp4': {
+      mimeType: 'video/mp4; codecs=avc1.4d400c',
+      colorSpace: 'bt601',
+      coded: {
+        topLeftColor: 'yellow',
+        topRightColor: 'red',
+        bottomLeftColor: 'blue',
+        bottomRightColor: 'green'
+      },
+      display: {
+        topLeftColor: 'blue',
+        topRightColor: 'green',
+        bottomLeftColor: 'yellow',
+        bottomRightColor: 'red'
+      }
+    },
+    'four-colors-vp9-bt601-hflip.mp4': {
+      mimeType: 'video/mp4; codecs=vp09.00.10.08',
+      colorSpace: 'bt601',
+      coded: {
+        topLeftColor: 'yellow',
+        topRightColor: 'red',
+        bottomLeftColor: 'blue',
+        bottomRightColor: 'green'
+      },
+      display: {
+        topLeftColor: 'red',
+        topRightColor: 'yellow',
+        bottomLeftColor: 'green',
+        bottomRightColor: 'blue'
+      }
+    },
+    'four-colors-vp9-bt601-vflip.mp4': {
+      mimeType: 'video/mp4; codecs=vp09.00.10.08',
+      colorSpace: 'bt601',
+      coded: {
+        topLeftColor: 'yellow',
+        topRightColor: 'red',
+        bottomLeftColor: 'blue',
+        bottomRightColor: 'green'
+      },
+      display: {
+        topLeftColor: 'blue',
+        topRightColor: 'green',
+        bottomLeftColor: 'yellow',
+        bottomRightColor: 'red'
       }
     }
   }
@@ -245,7 +383,12 @@ callback)
 
       video.addEventListener(
         'error',
-        (event) => reject(new ErrorWithExtra('Video received "error" event', () => ({ event }))),
+        (event) =>
+        reject(
+          new ErrorWithExtra('Video received "error" event, message: ' + event.message, () => ({
+            event
+          }))
+        ),
         true
       );
 
@@ -323,13 +466,16 @@ video)
 
   return raceWithRejectOnTimeout(
     new Promise((resolve) => {
-      const videoTrack = video.captureStream().getVideoTracks()[0];
+      const videoTrack = video.
+      captureStream().
+      getVideoTracks()[0];
       const trackProcessor = new MediaStreamTrackProcessor({
         track: videoTrack
       });
       const transformer = new TransformStream({
         transform(videoFrame, _controller) {
           videoTrack.stop();
+          test.trackForCleanup(videoFrame);
           resolve(videoFrame);
         },
         flush(controller) {
@@ -373,6 +519,8 @@ export function getVideoElement(t, videoName) {
   const videoUrl = getResourcePath(videoName);
   videoElement.src = videoUrl;
 
+  t.trackForCleanup(videoElement);
+
   return videoElement;
 }
 
@@ -400,4 +548,61 @@ timeoutMessage)
   });
   const promise = raceWithRejectOnTimeout(promiseWithoutTimeout, 2000, timeoutMessage);
   return { promise, callbackAndResolve: callbackAndResolve };
+}
+
+/**
+ * Create VideoFrame from camera captured frame. Check whether browser environment has
+ * camera supported.
+ * Returns a webcodec VideoFrame.
+ *
+ * @param test: GPUTest that requires getting VideoFrame
+ *
+ */
+export async function captureCameraFrame(test) {
+  if (
+  typeof navigator.mediaDevices === 'undefined' ||
+  typeof navigator.mediaDevices.getUserMedia === 'undefined')
+  {
+    test.skip("Browser doesn't support capture frame from camera.");
+  }
+
+  const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  const track = stream.getVideoTracks()[0];
+
+  if (!track) {
+    test.skip("Doesn't have valid camera captured stream for testing.");
+  }
+
+  // Use MediaStreamTrackProcessor and ReadableStream to generate video frame directly.
+  if (typeof MediaStreamTrackProcessor !== 'undefined') {
+    const trackProcessor = new MediaStreamTrackProcessor({ track });
+    const reader = trackProcessor.readable.getReader();
+    const result = await reader.read();
+    if (result.done) {
+      test.skip('MediaStreamTrackProcessor: Cannot get valid frame from readable stream.');
+    }
+
+    return result.value;
+  }
+
+  // Fallback to ImageCapture if MediaStreamTrackProcessor not supported. Using grabFrame() to
+  // generate imageBitmap and creating video frame from it.
+  if (typeof ImageCapture !== 'undefined') {
+    const imageCapture = new ImageCapture(track);
+    const imageBitmap = await imageCapture.grabFrame();
+    return new VideoFrame(imageBitmap);
+  }
+
+  // Fallback to using HTMLVideoElement to do capture.
+  if (typeof HTMLVideoElement === 'undefined') {
+    test.skip('Try to use HTMLVideoElement do capture but HTMLVideoElement not available.');
+  }
+
+  const video = document.createElement('video');
+  video.srcObject = stream;
+
+  const frame = await getVideoFrameFromVideoElement(test, video);
+  test.trackForCleanup(frame);
+
+  return frame;
 }

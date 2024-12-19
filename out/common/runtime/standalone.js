@@ -1,6 +1,7 @@
 /**
 * AUTO-GENERATED - DO NOT EDIT. Source: https://github.com/gpuweb/cts
 **/ // Implements the standalone test runner (see also: /standalone/index.html).
+
 import { dataCache } from '../framework/data_cache.js';
 import { getResourcePath, setBaseResourcePath } from '../framework/resources.js';
 import { globalTestConfig } from '../framework/test_config.js';
@@ -21,7 +22,7 @@ import {
 
   camelCaseToSnakeCase } from
 './helper/options.js';
-import { TestWorker } from './helper/test_worker.js';
+import { TestDedicatedWorker, TestSharedWorker, TestServiceWorker } from './helper/test_worker.js';
 
 const rootQuerySpec = 'webgpu:*';
 let promptBeforeReload = false;
@@ -47,16 +48,26 @@ const { queries: qs, options } = parseSearchParamLikeWithOptions(
   kStandaloneOptionsInfos,
   window.location.search || rootQuerySpec
 );
-const { runnow, debug, unrollConstEvalLoops, powerPreference, compatibility } = options;
-globalTestConfig.unrollConstEvalLoops = unrollConstEvalLoops;
+const { runnow, powerPreference, compatibility, forceFallbackAdapter } = options;
+globalTestConfig.enableDebugLogs = options.debug;
+globalTestConfig.unrollConstEvalLoops = options.unrollConstEvalLoops;
 globalTestConfig.compatibility = compatibility;
+globalTestConfig.logToWebSocket = options.logToWebSocket;
 
-Logger.globalDebugMode = debug;
 const logger = new Logger();
 
 setBaseResourcePath('../out/resources');
 
-const worker = options.worker ? new TestWorker(options) : undefined;
+const testWorker =
+options.worker === null ?
+null :
+options.worker === 'dedicated' ?
+new TestDedicatedWorker(options) :
+options.worker === 'shared' ?
+new TestSharedWorker(options) :
+options.worker === 'service' ?
+new TestServiceWorker(options) :
+unreachable();
 
 const autoCloseOnPass = document.getElementById('autoCloseOnPass');
 const resultsVis = document.getElementById('resultsVis');
@@ -70,11 +81,12 @@ stopButtonElem.addEventListener('click', () => {
   stopRequested = true;
 });
 
-if (powerPreference || compatibility) {
+if (powerPreference || compatibility || forceFallbackAdapter) {
   setDefaultRequestAdapterOptions({
     ...(powerPreference && { powerPreference }),
     // MAINTENANCE_TODO: Change this to whatever the option ends up being
-    ...(compatibility && { compatibilityMode: true })
+    ...(compatibility && { compatibilityMode: true, featureLevel: 'compatibility' }),
+    ...(forceFallbackAdapter && { forceFallbackAdapter: true })
   });
 }
 
@@ -168,8 +180,8 @@ function makeCaseHTML(t) {
 
     const [rec, res] = logger.record(name);
     caseResult = res;
-    if (worker) {
-      await worker.run(rec, name);
+    if (testWorker) {
+      await testWorker.run(rec, name);
     } else {
       await t.run(rec);
     }
@@ -357,6 +369,9 @@ parentLevel)
   const runMySubtree = async () => {
     const results = [];
     for (const { runSubtree } of childFns) {
+      if (stopRequested) {
+        break;
+      }
       results.push(await runSubtree());
     }
     return mergeSubtreeResults(...results);
@@ -479,6 +494,7 @@ onChange)
   {
     $('<input>').
     attr('type', 'text').
+    attr('title', n.query.toString()).
     prop('readonly', true).
     addClass('nodequery').
     on('click', (event) => {
@@ -505,8 +521,6 @@ onChange)
 
 // Collapse s:f:t:* or s:f:t:c by default.
 let lastQueryLevelToExpand = 2;
-
-
 
 /**
  * Takes an array of string, ParamValue and returns an array of pairs
@@ -535,7 +549,7 @@ function keyValueToPairs([k, v]) {
  */
 function prepareParams(params) {
   const pairsArrays = Object.entries(params).
-  filter(([, v]) => !!v).
+  filter(([, v]) => !(v === false || v === null || v === '0')).
   map(keyValueToPairs);
   const pairs = pairsArrays.flat();
   return new URLSearchParams(pairs).toString();
@@ -604,14 +618,14 @@ void (async () => {
 
     const createSelect = (optionName, info) => {
       const select = $('<select>').on('change', function () {
-        optionValues[optionName] = this.value;
+        optionValues[optionName] = JSON.parse(this.value);
         updateURLsWithCurrentOptions();
       });
       const currentValue = optionValues[optionName];
       for (const { value, description } of info.selectValueDescriptions) {
         $('<option>').
         text(description).
-        val(value).
+        val(JSON.stringify(value)).
         prop('selected', value === currentValue).
         appendTo(select);
       }
@@ -665,6 +679,8 @@ void (async () => {
     showInfo(err.toString());
     return;
   }
+
+  document.title = `${document.title} ${compatibility ? '(compat)' : ''} - ${rootQuery.toString()}`;
 
   tree.dissolveSingleChildTrees();
 

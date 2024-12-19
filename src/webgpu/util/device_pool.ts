@@ -13,6 +13,8 @@ import { getDefaultLimits, kLimits } from '../capability_info.js';
 // This file should not be transitively imported by .cache.ts files
 
 export interface DeviceProvider {
+  /** Adapter the device was created from. Cannot be reused; just for adapter info. */
+  readonly adapter: GPUAdapter;
   readonly device: GPUDevice;
   expectDeviceLost(reason: GPUDeviceLostReason): void;
 }
@@ -21,19 +23,50 @@ class TestFailedButDeviceReusable extends Error {}
 class FeaturesNotSupported extends Error {}
 export class TestOOMedShouldAttemptGC extends Error {}
 
+/**
+ * DescriptorModifier lets you supply a function to select a device
+ * based on the limits/features available from the adapter.
+ * Devices pooled based on a key and that key is derived before
+ * an adapter is requested. That means you select key without
+ * knowledge of what the adapter will provide. You do this by
+ * providing a keyModifier function that appends a suffix.
+ *
+ * For example: If your modifier adds all the limits you might
+ * choose 'maxLimits' are your suffix
+ *
+ * ```js
+ *   keyModifier(s: string) { return `${s}:maxLimits`; },
+ * ```
+ *
+ * If your modifier selects only `maxBindGroups` and `maxColorAttachments`
+ * then your suffix might be `maxBindGroups&maxColorAttachments`
+ *
+ * ```js
+ *   keyModifier(s: string) { return `${s}:maxBindGroups&maxColorAttachments`; },
+ * ```
+ */
+export type DescriptorModifier = {
+  keyModifier(baseKey: string): string;
+  descriptorModifier(
+    adapter: GPUAdapter,
+    desc: CanonicalDeviceDescriptor | undefined
+  ): CanonicalDeviceDescriptor;
+};
+
 export class DevicePool {
   private holders: 'uninitialized' | 'failed' | DescriptorToHolderMap = 'uninitialized';
 
   /** Acquire a device from the pool and begin the error scopes. */
   async acquire(
     recorder: TestCaseRecorder,
-    descriptor?: UncanonicalizedDeviceDescriptor
+    descriptor: UncanonicalizedDeviceDescriptor | undefined,
+    descriptorModifier: DescriptorModifier | undefined
   ): Promise<DeviceProvider> {
     let errorMessage = '';
     if (this.holders === 'uninitialized') {
       this.holders = new DescriptorToHolderMap();
       try {
-        await this.holders.getOrCreate(recorder, undefined);
+        await this.holders.getOrCreate(recorder, undefined, descriptorModifier);
       } catch (ex) {
         this.holders = 'failed';
         if (ex instanceof Error) {
@@ -47,7 +80,7 @@ export class DevicePool {
       `WebGPU device failed to initialize${errorMessage}; not retrying`
     );
 
-    const holder = await this.holders.getOrCreate(recorder, descriptor);
+    const holder = await this.holders.getOrCreate(recorder, descriptor, descriptorModifier);
 
     assert(holder.state === 'free', 'Device was in use on DevicePool.acquire');
     holder.state = 'acquired';
@@ -81,6 +114,8 @@ export class DevicePool {
         this.holders.delete(holder);
         if ('destroy' in holder.device) {
           holder.device.destroy();
+          // Wait for destruction (or actual device loss if any) to complete.
+          await holder.device.lost;
         }
 
         // Release the (hopefully only) ref to the GPUDevice.
@@ -139,9 +174,11 @@ class DescriptorToHolderMap {
    */
   async getOrCreate(
     recorder: TestCaseRecorder,
-    uncanonicalizedDescriptor: UncanonicalizedDeviceDescriptor | undefined
+    uncanonicalizedDescriptor: UncanonicalizedDeviceDescriptor | undefined,
+    descriptorModifier: DescriptorModifier | undefined
   ): Promise<DeviceHolder> {
-    const [descriptor, key] = canonicalizeDescriptor(uncanonicalizedDescriptor);
+    const [descriptor, baseKey] = canonicalizeDescriptor(uncanonicalizedDescriptor);
+    const key = descriptorModifier?.keyModifier(baseKey) || baseKey;
     // Quick-reject descriptors that are known to be unsupported already.
     if (this.unsupported.has(key)) {
       throw new SkipTestCase(
@@ -163,7 +200,7 @@ class DescriptorToHolderMap {
     // No existing item was found; add a new one.
     let value;
     try {
-      value = await DeviceHolder.create(recorder, descriptor);
+      value = await DeviceHolder.create(recorder, descriptor, descriptorModifier);
     } catch (ex) {
       if (ex instanceof FeaturesNotSupported) {
         this.unsupported.add(key);
@@ -205,7 +242,7 @@ export type UncanonicalizedDeviceDescriptor = {
   /** @deprecated this field cannot be used */
   features?: undefined;
 };
-type CanonicalDeviceDescriptor = Omit<
+export type CanonicalDeviceDescriptor = Omit<
   Required<GPUDeviceDescriptor>,
   'label' | 'nonGuaranteedFeatures' | 'nonGuaranteedLimits'
 >;
@@ -286,6 +323,8 @@ type DeviceHolderState = 'free' | 'acquired';
  * Holds a GPUDevice and tracks its state (free/acquired) and handles device loss.
  */
 class DeviceHolder implements DeviceProvider {
+  /** Adapter the device was created from. Cannot be reused; just for adapter info. */
+  readonly adapter: GPUAdapter;
   /** The device. Will be cleared during cleanup if there were unexpected errors. */
   private _device: GPUDevice | undefined;
   /** Whether the device is in use by a test or not. */
@@ -299,21 +338,28 @@ class DeviceHolder implements DeviceProvider {
   // If the device is lost, DeviceHolder.lost gets set.
   static async create(
     recorder: TestCaseRecorder,
-    descriptor: CanonicalDeviceDescriptor | undefined
+    descriptor: CanonicalDeviceDescriptor | undefined,
+    descriptorModifier: DescriptorModifier | undefined
   ): Promise<DeviceHolder> {
     const gpu = getGPU(recorder);
     const adapter = await gpu.requestAdapter();
     assert(adapter !== null, 'requestAdapter returned null');
+    if (descriptorModifier) {
+      descriptor = descriptorModifier.descriptorModifier(adapter, descriptor);
+    }
     if (!supportsFeature(adapter, descriptor)) {
       throw new FeaturesNotSupported('One or more features are not supported');
     }
+    // No trackForCleanup because we plan to reuse the device for the next test.
+    // eslint-disable-next-line no-restricted-syntax
     const device = await adapter.requestDevice(descriptor);
     assert(device !== null, 'requestDevice returned null');
 
-    return new DeviceHolder(device);
+    return new DeviceHolder(adapter, device);
   }
 
-  private constructor(device: GPUDevice) {
+  private constructor(adapter: GPUAdapter, device: GPUDevice) {
+    this.adapter = adapter;
     this._device = device;
     void this._device.lost.then(ev => {
       this.lostInfo = ev;

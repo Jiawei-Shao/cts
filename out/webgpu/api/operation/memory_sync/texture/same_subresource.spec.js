@@ -9,7 +9,7 @@ Memory Synchronization Tests for Texture: read before write, read after write, a
 `;import { makeTestGroup } from '../../../../../common/framework/test_group.js';
 import { assert, memcpy, unreachable } from '../../../../../common/util/util.js';
 
-import { GPUTest } from '../../../../gpu_test.js';
+import { GPUTest, MaxLimitsTestMixin } from '../../../../gpu_test.js';
 import { align } from '../../../../util/math.js';
 import { getTextureCopyLayout } from '../../../../util/texture/layout.js';
 import {
@@ -31,7 +31,7 @@ import {
   kOpInfo } from
 './texture_sync_test.js';
 
-export const g = makeTestGroup(GPUTest);
+export const g = makeTestGroup(MaxLimitsTestMixin(GPUTest));
 
 const fullscreenQuadWGSL = `
   struct VertexOutput {
@@ -53,6 +53,18 @@ const fullscreenQuadWGSL = `
   }
 `;
 
+function readOpNeedsStorageTexture({ op, in: context }) {
+  return (
+    op === 'sample' && (context === 'render-pass-encoder' || context === 'render-bundle-encoder'));
+
+}
+
+function writeOpNeedsStorageTexture({ op, in: context }) {
+  return (
+    op === 'storage' && (context === 'render-pass-encoder' || context === 'render-bundle-encoder'));
+
+}
+
 class TextureSyncTestHelper extends OperationContextHelper {
 
 
@@ -66,12 +78,33 @@ class TextureSyncTestHelper extends OperationContextHelper {
 
   {
     super(t);
-    this.texture = t.trackForCleanup(
-      t.device.createTexture({
-        size: this.kTextureSize,
-        format: this.kTextureFormat,
-        ...textureCreationParams
-      })
+    this.texture = t.createTextureTracked({
+      size: this.kTextureSize,
+      format: this.kTextureFormat,
+      ...textureCreationParams
+    });
+  }
+
+  static skipIfNeedStorageTexturesAndNoStorageTextures(
+  t,
+  reads,
+  writes)
+  {
+    if (!t.isCompatibility) {
+      return;
+    }
+
+    if (t.device.limits.maxStorageTexturesInFragmentStage >= 1) {
+      return;
+    }
+
+    const needStorageTexture =
+    reads.reduce((need, read) => need || readOpNeedsStorageTexture(read), false) ||
+    writes.reduce((need, write) => need || writeOpNeedsStorageTexture(write), false);
+
+    t.skipIf(
+      needStorageTexture,
+      `maxStorageTexturesInFragmentStage(${t.device.limits.maxStorageTexturesInFragmentStage}) < 1`
     );
   }
 
@@ -83,13 +116,11 @@ class TextureSyncTestHelper extends OperationContextHelper {
     this.ensureContext(context);
     switch (op) {
       case 't2t-copy':{
-          const texture = this.t.trackForCleanup(
-            this.device.createTexture({
-              size: this.kTextureSize,
-              format: this.kTextureFormat,
-              usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST
-            })
-          );
+          const texture = this.t.createTextureTracked({
+            size: this.kTextureSize,
+            format: this.kTextureFormat,
+            usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST
+          });
 
           assert(this.commandEncoder !== undefined);
           this.commandEncoder.copyTextureToTexture(
@@ -106,20 +137,16 @@ class TextureSyncTestHelper extends OperationContextHelper {
           ...this.kTextureSize,
           1]
           );
-          const buffer = this.t.trackForCleanup(
-            this.device.createBuffer({
-              size: byteLength,
-              usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST
-            })
-          );
+          const buffer = this.t.createBufferTracked({
+            size: byteLength,
+            usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST
+          });
 
-          const texture = this.t.trackForCleanup(
-            this.device.createTexture({
-              size: this.kTextureSize,
-              format: this.kTextureFormat,
-              usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST
-            })
-          );
+          const texture = this.t.createTextureTracked({
+            size: this.kTextureSize,
+            format: this.kTextureFormat,
+            usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST
+          });
 
           assert(this.commandEncoder !== undefined);
           this.commandEncoder.copyTextureToBuffer(
@@ -137,13 +164,11 @@ class TextureSyncTestHelper extends OperationContextHelper {
           return texture;
         }
       case 'sample':{
-          const texture = this.t.trackForCleanup(
-            this.device.createTexture({
-              size: this.kTextureSize,
-              format: this.kTextureFormat,
-              usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.STORAGE_BINDING
-            })
-          );
+          const texture = this.t.createTextureTracked({
+            size: this.kTextureSize,
+            format: this.kTextureFormat,
+            usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.STORAGE_BINDING
+          });
 
           const bindGroupLayout = this.device.createBindGroupLayout({
             entries: [
@@ -326,7 +351,7 @@ class TextureSyncTestHelper extends OperationContextHelper {
           break;
         }
       case 't2t-copy':{
-          const texture = this.device.createTexture({
+          const texture = this.t.createTextureTracked({
             size: this.kTextureSize,
             format: this.kTextureFormat,
             usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST
@@ -376,12 +401,10 @@ class TextureSyncTestHelper extends OperationContextHelper {
             }
           }
 
-          const buffer = this.t.trackForCleanup(
-            this.device.createBuffer({
-              size: fullTexelData.byteLength,
-              usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST
-            })
-          );
+          const buffer = this.t.createBufferTracked({
+            size: fullTexelData.byteLength,
+            usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST
+          });
 
           this.queue.writeBuffer(buffer, 0, fullTexelData);
 
@@ -395,14 +418,12 @@ class TextureSyncTestHelper extends OperationContextHelper {
         }
       case 'attachment-resolve':{
           assert(this.commandEncoder !== undefined);
-          const renderTarget = this.t.trackForCleanup(
-            this.device.createTexture({
-              format: this.kTextureFormat,
-              size: this.kTextureSize,
-              usage: GPUTextureUsage.RENDER_ATTACHMENT,
-              sampleCount: 4
-            })
-          );
+          const renderTarget = this.t.createTextureTracked({
+            format: this.kTextureFormat,
+            size: this.kTextureSize,
+            usage: GPUTextureUsage.RENDER_ATTACHMENT,
+            sampleCount: 4
+          });
           this.renderPassEncoder = this.commandEncoder.beginRenderPass({
             colorAttachments: [
             {
@@ -572,6 +593,11 @@ expandWithParams(function* ({ _context }) {
 })
 ).
 fn((t) => {
+  TextureSyncTestHelper.skipIfNeedStorageTexturesAndNoStorageTextures(
+    t,
+    [t.params.read],
+    [t.params.write]
+  );
   const helper = new TextureSyncTestHelper(t, {
     usage:
     GPUTextureUsage.COPY_DST |
@@ -624,6 +650,11 @@ expandWithParams(function* ({ _context }) {
 })
 ).
 fn((t) => {
+  TextureSyncTestHelper.skipIfNeedStorageTexturesAndNoStorageTextures(
+    t,
+    [t.params.read],
+    [t.params.write]
+  );
   const helper = new TextureSyncTestHelper(t, {
     usage: kOpInfo[t.params.read.op].readUsage | kOpInfo[t.params.write.op].writeUsage
   });
@@ -668,6 +699,12 @@ expandWithParams(function* ({ _context }) {
 })
 ).
 fn((t) => {
+  TextureSyncTestHelper.skipIfNeedStorageTexturesAndNoStorageTextures(
+    t,
+    [],
+    [t.params.first, t.params.second]
+  );
+
   const helper = new TextureSyncTestHelper(t, {
     usage:
     GPUTextureUsage.COPY_SRC |
